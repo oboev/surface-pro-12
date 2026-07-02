@@ -38,3 +38,8 @@ ASSETS="${PROJECT_DIR}/assets"
 # mount-table comparisons and the rm -rf boundary guard to work correctly.
 ROOTFS="$(realpath -m "${PROJECT_DIR}/build/inst/root")"
 ISO_MOUNT="$(realpath -m "${PROJECT_DIR}/build/inst/iso")"
+
+# Stage 2 output dir — holds rootfs.squashfs, the RAM-boot initrd, and the
+# kernel+dtb copied out for the Stage 3 ESP. `realpath -m` so it is absolute
+# even before the directory exists (created by inst-initrd.sh).
+OUT="$(realpath -m "${PROJECT_DIR}/build/inst/out")"
