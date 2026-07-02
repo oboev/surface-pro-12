@@ -1,0 +1,30 @@
+schema: spec-driven
+  
+  context: |
+    Project: Linux (ARM64) bring-up for the Microsoft Surface Pro 12 (Snapdragon X).
+    Build host is x86_64 Debian; all target binaries are aarch64, so any chroot into
+    the rootfs runs under qemu-aarch64-static + binfmt — scripts must not assume
+    native execution.
+  
+    Shell scripts:
+      - Target bash. No zsh-only constructs (e.g. `for a b in …` — bash allows one
+        loop variable only).
+      - Start with `set -euo pipefail`.
+      - Must pass `bash -n` and `shellcheck` with no errors before any task is checked.
+      - Beware pipeline/`||` precedence around helper functions: `f "x" cmd | other`
+        pipes f's stdout into `other`; wrap the whole pipeline, not just the head.
+      - Never pre-create a directory that `unsquashfs -d` will own, and never use
+        `unsquashfs -f` (it corrupts top-level perms to 700 — a known project footgun).
+        
+  rules:
+    tasks:
+      - End every tasks.md with a "Verification" section that checks the
+        implementation against every spec scenario, plus `bash -n` and `shellcheck`.
+      - A task is marked [x] only after its behavior is verified, not merely written.
+      - Add a regression check for every bug found in review so it cannot silently return.
+    spec:
+      - Each requirement's scenarios must be concrete enough to verify mechanically
+        (a command whose output can be checked), not just prose.
+    proposal:
+      - Always include a Non-Goals section.
+        
