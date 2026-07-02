@@ -37,11 +37,12 @@
 
 ## 5. Install GRUB and write grub.cfg
 
-- [ ] 5.1 `grub-install --removable --target=arm64-efi --efi-directory=<mnt> --boot-directory=<mnt>/boot <device>`
+- [ ] 5.1 `grub-install --removable --no-nvram --target=arm64-efi --efi-directory=<mnt> --boot-directory=<mnt>/boot --modules="part_gpt fat search search_label search_fs_uuid normal configfile linux fdt all_video gzio echo test"`
 - [ ] 5.2 Verify `<mnt>/EFI/BOOT/BOOTAA64.EFI` exists
 - [ ] 5.3 Write `<mnt>/boot/grub/grub.cfg`: `set default=0`, a timeout, and a single entry
-- [ ] 5.4 Entry "Try in RAM (no disk changes)": `linux /vmlinuz-<release> <BASE_CMDLINE>`, `devicetree /surface.dtb`, `initrd /sp12-install.initrd` — no `sp12.install` flag
-- [ ] 5.5 The entry `insmod`s `part_gpt fat linux fdt` (the `devicetree` command lives in `fdt.mod`, NOT `devicetree.mod`)
+- [ ] 5.4 Entry "Try in RAM (no disk changes)": `search --no-floppy --label SP12BOOT --set=root`, `linux /vmlinuz-<release> rw console=tty0 clk_ignore_unused pd_ignore_unused`, `devicetree /surface.dtb`, `initrd /sp12-install.initrd` — no `sp12.install` flag. The `clk_ignore_unused pd_ignore_unused` params are REQUIRED (Snapdragon display stays lit)
+- [ ] 5.5 `insmod part_gpt fat search_label linux fdt all_video gzio` (the `devicetree` command lives in `fdt.mod`, NOT `devicetree.mod`; `all_video` sets up the EFI framebuffer the kernel inherits)
+- [ ] 5.6 `grub-install` bakes the same modules into the core image via `--modules=…` and uses `--no-nvram`
 
 ## 6. Finish
 
@@ -88,3 +89,4 @@
 - [ ] 7.4.5 The system-disk guard rejects the disk backing `/` even when passed as a bare short name vs full `/dev/...` path
 - [ ] 7.4.6 The EXIT trap unmounts the ESP on any mid-build failure (no leaked mount / busy loop device)
 - [ ] 7.4.7 grub.cfg uses `insmod fdt` (not `insmod devicetree`) — the `devicetree` command is provided by `fdt.mod`; `insmod devicetree` fails at boot with "devicetree.mod not found"
+- [ ] 7.4.8 The kernel cmdline keeps `clk_ignore_unused pd_ignore_unused` and the entry `insmod all_video` — dropping either black-screens the Surface after GRUB (Snapdragon gates the display clocks/power domains / no EFI framebuffer)

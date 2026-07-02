@@ -30,7 +30,13 @@ ESP_LABEL="SP12BOOT"
 GRUB_TARGET="arm64-efi"
 GRUB_MODULES_DIR="/usr/lib/grub/${GRUB_TARGET}"
 # Base kernel cmdline for the (single) menu entry. No disk-touching flags.
-BASE_CMDLINE="console=tty0"
+# clk_ignore_unused + pd_ignore_unused are REQUIRED on Snapdragon: without them
+# the kernel gates "unused" clocks/power domains late in boot — including the
+# display controller (MDSS/DPU) — and the panel goes black.
+BASE_CMDLINE="rw console=tty0 clk_ignore_unused pd_ignore_unused"
+# GRUB modules to bake into the core image so the entry can insmod them and set
+# up the EFI framebuffer (all_video) the kernel inherits.
+GRUB_CORE_MODULES="part_gpt fat search search_label search_fs_uuid normal configfile linux fdt all_video gzio echo test"
 
 MNT=""   # ESP mountpoint, set once we mount; used by the cleanup trap.
 
@@ -182,8 +188,9 @@ copy_verify "$INITRD_SRC"  "${MNT}/sp12-install.initrd"
 # 5. Install GRUB (removable) and write the single-entry grub.cfg
 # =============================================================================
 run_with_check "Installing GRUB (${GRUB_TARGET}, removable)" \
-    grub-install --removable --target="$GRUB_TARGET" \
-        --efi-directory="$MNT" --boot-directory="${MNT}/boot"
+    grub-install --removable --no-nvram --target="$GRUB_TARGET" \
+        --efi-directory="$MNT" --boot-directory="${MNT}/boot" \
+        --modules="$GRUB_CORE_MODULES"
 [ -f "${MNT}/EFI/BOOT/BOOTAA64.EFI" ] \
     || die "grub-install did not produce ${MNT}/EFI/BOOT/BOOTAA64.EFI."
 
@@ -196,11 +203,16 @@ cat > "${MNT}/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=5
 
+insmod part_gpt
+insmod fat
+insmod search_label
+insmod linux
+insmod fdt
+insmod all_video
+insmod gzio
+
 menuentry "Try in RAM (no disk changes)" {
-    insmod part_gpt
-    insmod fat
-    insmod linux
-    insmod fdt
+    search --no-floppy --label ${ESP_LABEL} --set=root
     linux /vmlinuz-${REL} ${BASE_CMDLINE}
     devicetree /surface.dtb
     initrd /sp12-install.initrd
