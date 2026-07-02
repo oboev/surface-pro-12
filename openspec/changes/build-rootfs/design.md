@@ -1,12 +1,12 @@
 ## Context
 
-The Surface Pro 12 uses a Qualcomm Snapdragon X Plus (ARM64) SoC. The cross-compiled 7.2 kernel, device tree blob, and modules already exist in this project. The Resolute ISO (`resolute-desktop-arm64+x1e.iso`) provides a ready-made Ubuntu 26.04 arm64 userspace. We need to combine these into a single rootfs tree that Stage 2 will compress into a squashfs and embed in the initrd for RAM-only boot.
+The Surface Pro 12 uses a Qualcomm Snapdragon X Plus (ARM64) SoC. The cross-compiled 7.2 kernel and modules already exist in this project; the Surface device tree blob and firmware come from the project's `assets/` staging dir (`$ASSETS`, populated from the Surface community repo). The Resolute ISO (`resolute-desktop-arm64+x1e.iso`) provides a ready-made Ubuntu 26.04 arm64 userspace. We need to combine these into a single rootfs tree that Stage 2 will compress into a squashfs and embed in the initrd for RAM-only boot.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Produce a complete rootfs tree (`build/inst/root/`) that boots to GNOME on the SP12
-- Inject the cross-compiled kernel, modules, firmware, and DTB into the tree
+- Produce a complete rootfs tree (`$BUILD/inst/root`) that boots to GNOME on the SP12
+- Inject the cross-compiled kernel and modules, plus the Surface firmware and DTB (from `$ASSETS`), into the tree
 - Configure apt to use the arm64 ports mirror (not the ISO's `file:/cdrom` source)
 - Create user `aleksey` with password, enable GDM autologin, set hostname, default target = graphical.target
 - Extract from ISO's `minimal.squashfs` (not the full desktop squashfs) to minimize size
@@ -21,26 +21,28 @@ The Surface Pro 12 uses a Qualcomm Snapdragon X Plus (ARM64) SoC. The cross-comp
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────────┐
 │                    inst-rootfs.sh                         │
-├──────────────────────────────────────────────────────────┤
-│                                                          │
-│  Inputs:                                                 │
-│    Resolute ISO ──► casper/minimal.squashfs              │
-│    Kernel src ──► arch/arm64/boot/Image                  │
-│    Kernel src ──► modules (via modules_install)          │
-│    DTB assets ──► boot/dtb                               │
-│                                                          │
-│  Process:                                                │
-│    1. Mount ISO → extract minimal.squashfs               │
-│    2. Inject kernel + modules + firmware + DTB           │
-│    3. Chroot: apt config + user setup                     │
-│    4. Unmount chroot bind mounts                            │
-│                                                          │
-│  Output:                                                 │
-│    build/inst/root/  — complete rootfs tree              │
-│                                                          │
-└──────────────────────────────────────────────────────────┘
+├───────────────────────────────────────────────────────────┤
+│                                                           │
+│  Inputs:                                                  │
+│    $ISO_PATH ──► casper/minimal.squashfs                  │
+│    $KERNEL_SRC ──► arch/arm64/boot/Image                  │
+│    $KERNEL_SRC ──► lib/modules/<release> (modules_install)│
+│    $ASSETS/boot/dtb ──► boot/surface.dtb                  │
+│    $ASSETS/lib/firmware ──► firmware                      │
+│                                                           │
+│  Process:                                                 │
+│    0. Guard+remove stale rootfs (findmnt safety)          │
+│    1. Mount ISO → extract minimal.squashfs                │
+│    2. Inject kernel + modules + firmware + DTB            │
+│    3. Chroot: apt config (resolute) + user setup          │
+│    4. Unmount chroot bind mounts                          │
+│                                                           │
+│  Output:                                                  │
+│    $BUILD/inst/root/  — complete rootfs tree               │
+│                                                           │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## Decisions
@@ -55,10 +57,10 @@ The Resolute ISO contains `casper/minimal.squashfs` — a lean Ubuntu arm64 root
 ### Use minimal.squashfs, not the full desktop squashfs
 Both ISO squashfs variants include snapd and snaps. `minimal.squashfs` is leaner because it excludes some desktop meta-packages and extra apps, reducing the squashfs size for Stage 2. This matters: every megabyte saved in the squashfs means more RAM headroom for the desktop and the overlay upper layer.
 
-### Rootfs tree at `build/inst/root/` (project-local)
-The rootfs tree lives inside the `build/` directory alongside the kernel output:
-- Keeps all build artifacts in one place (`build/output/` for kernel, `build/inst/root/` for rootfs)
-- Uses the same gitignore pattern as `build/output/` (already excluded)
+### Rootfs tree at `$BUILD/inst/root`
+The rootfs tree lives inside the `$BUILD` directory alongside the kernel output:
+- Keeps all build artifacts in one place (`$BUILD/output` for kernel, `$BUILD/inst/root` for rootfs)
+- Uses the same gitignore pattern as `$BUILD/output` (already excluded)
 - Can be regenerated from scratch without affecting the project repo
 
 ### Chroot reconfigure apt to use ports mirror
@@ -74,7 +76,7 @@ The ISO's rootfs points apt at `file:/cdrom` (the live media source). In our chr
 | ISO's `minimal.squashfs` may not exist or path differs | Script checks and aborts with clear error |
 | Rootfs exceeds 4 GB squashfs limit | Size is printed at end; Stage 2 will check and abort if needed |
 | Chroot apt mirror is down or partial | Use standard `ports.ubuntu.com`; accept transient failure |
-| `build/` dir on shared or CI storage fills up | Staged cleanup between rootfs and squashfs; `build/` already gitignored |
+| `$BUILD` dir on shared or CI storage fills up | Staged cleanup between rootfs and squashfs; `$BUILD` already gitignored |
 
 
 

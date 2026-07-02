@@ -1,27 +1,31 @@
+## 0. Path configuration
+
+- [ ] 0.1 Use scripts/env.sh as source of truth for variables.
+
 ## 1. Verify prerequisites
 
 - [ ] 1.1 Confirm Resolute ISO exists at ISO path (3.9 GB)
 - [ ] 1.2 Confirm kernel source exists at KERNEL_SRC with `arch/arm64/boot/Image`
 - [ ] 1.3 Confirm DTB assets exist at DTB path
-- [ ] 1.4 Confirm output directories can be created (`build/inst/root/`, `build/inst/iso/`)
+- [ ] 1.4 Confirm output directories can be created (`$BUILD/inst/root/`, `$BUILD/inst/iso/`)
 
 ## 2. ISO mount and squashfs extraction
 
-- [ ] 2.1 Create mount point `build/inst/iso/` and mount ISO read-only (`-o loop,ro`)
-- [ ] 2.2 Extract `casper/minimal.squashfs` using `unsquashfs -d build/inst/root/` (no `-f`)
+- [ ] 2.1 Create mount point `$BUILD/inst/iso/` and mount ISO read-only (`-o loop,ro`)
+- [ ] 2.2 Extract `casper/minimal.squashfs` using `unsquashfs -d $BUILD/inst/root/` (no `-f`)
 - [ ] 2.3 Verify ISO is unmounted after extraction
-- [ ] 2.4 Sanity check: verify `build/inst/root/`, `build/inst/root/usr`, `build/inst/root/etc` are 755 permissions
+- [ ] 2.4 Sanity check: verify `$BUILD/inst/root/`, `$BUILD/inst/root/usr`, `$BUILD/inst/root/etc` are 755 permissions
 - [ ] 2.5 Abort with error if permissions are incorrect
 
 ## 3. Inject kernel, modules, firmware, DTB
 
 - [ ] 3.1 Read kernel release string from `linux/include/config/kernel.release`
-- [ ] 3.2 Copy `arch/arm64/boot/Image` to `build/inst/root/boot/vmlinuz-<release>`
-- [ ] 3.3 Run `make modules_install` with `INSTALL_MOD_PATH=build/inst/root/`
-- [ ] 3.4 Create `build/inst/root/lib/firmware/` directory
-- [ ] 3.5 Copy firmware files from assets (`$REPO/lib/` → `build/inst/root/lib/`)
+- [ ] 3.2 Copy `arch/arm64/boot/Image` to `$BUILD/inst/root/boot/vmlinuz-<release>`
+- [ ] 3.3 Run `make modules_install` with `INSTALL_MOD_PATH=$BUILD/inst/root/`
+- [ ] 3.4 Create `$BUILD/inst/root/lib/firmware/` directory
+- [ ] 3.5 Copy firmware files from assets (`$REPO/lib/` → `$BUILD/inst/root/lib/`)
 - [ ] 3.6 Copy `/usr/` files from assets if present
-- [ ] 3.7 Copy DTB to `build/inst/root/boot/surface.dtb`
+- [ ] 3.7 Copy DTB to `$BUILD/inst/root/boot/surface.dtb`
 
 ## 4. Chroot — prepare mounts
 
@@ -46,7 +50,7 @@
 ## 7. Cleanup and reporting
 
 - [ ] 7.1 Unmount all chroot bind mounts (`/dev`, `/dev/pts`, `/proc`, `/sys`)
-- [ ] 7.2 Remove mount point `build/inst/iso/`
+- [ ] 7.2 Remove mount point `$BUILD/inst/iso/`
 - [ ] 7.3 Print rootfs tree size summary
 - [ ] 7.4 Print completion message with next-stage guidance
 
