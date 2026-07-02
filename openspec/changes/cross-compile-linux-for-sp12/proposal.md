@@ -8,7 +8,7 @@ The Surface Pro 12 uses a Qualcomm Snapdragon X Plus (ARM64) SoC. There is no pr
 - Install the `gcc-aarch64-linux-gnu` cross-compilation toolchain
 - Produce individual build artifacts (kernel image, device tree blob, modules, config, System.map) in a structured output directory
 - Copy the device tree blob from the Surface Pro 12 device-tree repository (assets) rather than building from kernel source
-- Default kernel configuration via `make defconfig` with no manual tuning
+- Kernel configuration: `make defconfig` baseline, plus additional options forced to `=y` to support GNOME desktop boot and Type Cover power-on
 
 ## Capabilities
 

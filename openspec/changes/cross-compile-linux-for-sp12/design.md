@@ -9,7 +9,7 @@ The host is Debian 14 (forky) x86_64. The target is Ubuntu (ARM64) on the Surfac
 **Goals:**
 - Single command to produce all kernel build artifacts from source
 - Cross-compile from Debian amd64 host to ARM64 target
-- Use default kernel configuration (`make defconfig`) — no manual tuning
+- Apply required `=y` config overrides on top of `defconfig`
 - Copy DTB from assets (device-tree repository) rather than building from source
 - Produce individual output files (Image, DTB, modules, config, System.map)
 
@@ -18,12 +18,25 @@ The host is Debian 14 (forky) x86_64. The target is Ubuntu (ARM64) on the Surfac
 - Building or managing initramfs
 - GRUB configuration, EFI stub, or shim setup
 - Recovery kernels
-- Any kernel configuration tuning or module selection
+
+### Required config overrides
+
+| # | Symbol | Why |
+|---|--------|-----|
+| 1 | `CONFIG_SQUASHFS_LZO=y` | Ubuntu snaps use lzo; without it, snap `.mount` units fail and `graphical.target` never starts |
+| 2 | `CONFIG_SQUASHFS_XZ=y` | Some snaps use xz compression |
+| 3 | `CONFIG_SQUASHFS_ZSTD=y` | Some snaps use zstd compression |
+| 4 | `CONFIG_SQUASHFS_LZ4=y` | Some snaps use lz4 compression |
+| 5 | `CONFIG_SQUASHFS_ZLIB=y` | Some snaps use zlib compression |
+| 6 | `CONFIG_SURFACE_AGGREGATOR=y` | EC communication for Surface devices |
+| 7 | `CONFIG_SURFACE_AGGREGATOR_BUS=y` | SSAM bus driver |
+| 8 | `CONFIG_SURFACE_AGGREGATOR_REGISTRY=y` | SSAM registry for device properties |
+| 9 | `CONFIG_SURFACE_AGGREGATOR_HUB=y` | SSAM hub driver |
+| 10 | `CONFIG_SURFACE_AGGREGATOR_TABLET_SWITCH=y` | Tablet-mode switch (lid) support |
+| 11 | `CONFIG_SURFACE_HID=y` | Surface HID device driver |
+| 12 | `CONFIG_SURFACE_HID_CORE=y` | Surface HID core |
 
 ## Decisions
-
-### Use `make defconfig` for all kernel configuration
-The default ARM64 config includes ACPI support, ARM64 architecture, and a broad set of drivers. Manual tuning is explicitly excluded. If a required driver is missing, it is treated as a kernel version issue (the kernel source may need to be updated) rather than a config issue.
 
 ### Copy DTB from assets rather than building from kernel source
 The pre-compiled DTB (`assets/boot/dtb`) was produced by the device-tree maintainer and is calibrated to match the firmware and sensor registry data shipped with the repo. Building our own DTB from kernel source risks version drift between the DTB and the firmware calibration files.
