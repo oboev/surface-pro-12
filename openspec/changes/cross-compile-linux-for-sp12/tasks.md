@@ -1,6 +1,6 @@
 ## 1. Create build script skeleton
 
-- [x] 1.1 Create `scripts/build.sh` with shebang, set -euo pipefail, and executable permission
+- [x] 1.1 Create `scripts/build-kernel.sh` with shebang, set -euo pipefail, and executable permission
 - [x] 1.2 Define constants (KERNEL_SRC, ASSETS, OUTPUT, CROSS_COMPILE)
 
 ## 2. Pre-flight checks

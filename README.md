@@ -18,7 +18,7 @@ Project creates a set of scripts to produce a bootable Ubuntu USB on a **Microso
 # ISO_PATH=".../resolute-desktop-arm64+x1e.iso"
 
 # 3. Build kernel
-./scripts/build.sh
+./scripts/build-kernel.sh
 
 # 4. Assemble rootfs
 sudo ./scripts/inst-rootfs.sh
@@ -37,7 +37,7 @@ Run from the project root. Each stage must complete successfully before the next
 ## Stage 1: Cross-compile kernel
 
 ```bash
-./scripts/build.sh
+./scripts/build-kernel.sh
 ```
 
 Cross-compiles the ARM64 kernel from the `linux/` tree. Forces Surface-specific config symbols (Surface Aggregator, Surface HID, squashfs decompressors, ACPI, serial drivers, etc.). Outputs to `build/output/`: `vmlinuz`, `dtb`, `modules/`, `config`, `System.map`, `build-info.txt`.

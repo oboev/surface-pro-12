@@ -89,7 +89,7 @@ grep -q '^enabled' "$BINFMT" || die "qemu-aarch64 binfmt is registered but disab
 
 # 1.2 kernel source with the compiled ARM64 Image
 [ -f "${KERNEL_SRC}/arch/arm64/boot/Image" ] \
-    || die "Kernel Image not found at ${KERNEL_SRC}/arch/arm64/boot/Image (run scripts/build.sh first)."
+    || die "Kernel Image not found at ${KERNEL_SRC}/arch/arm64/boot/Image (run scripts/build-kernel.sh first)."
 
 # 1.2 (cont.) kernel release string — required to name vmlinuz + place modules
 [ -f "$KERNEL_RELEASE_FILE" ] \

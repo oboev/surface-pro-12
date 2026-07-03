@@ -1,11 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: Script exists and sources env.sh
-The system SHALL provide `scripts/build.sh`, executable, starting with `set -euo pipefail`, that sources `scripts/env.sh` for all path variables and resolves every input/output relative to those variables (never the caller's working directory).
+The system SHALL provide `scripts/build-kernel.sh`, executable, starting with `set -euo pipefail`, that sources `scripts/env.sh` for all path variables and resolves every input/output relative to those variables (never the caller's working directory).
 
 #### Scenario: Script exists and is executable
 - **WHEN** the project is set up
-- **THEN** `scripts/build.sh` exists and has the executable permission set
+- **THEN** `scripts/build-kernel.sh` exists and has the executable permission set
 
 ### Requirement: Toolchain installation
 The build script SHALL verify and install the `gcc-aarch64-linux-gnu` cross-compilation toolchain via `apt` if not already present.
@@ -59,7 +59,7 @@ The build script SHALL resolve every input and output path — kernel source and
 - **THEN** `linux/.config` contains all 12 override symbols set to `=y`, before compilation begins
 
 #### Scenario: Invoked from an unrelated directory
-- **WHEN** `build.sh` is run with a current working directory outside the project tree
+- **WHEN** `build-kernel.sh` is run with a current working directory outside the project tree
 - **THEN** the config overrides are still applied to `linux/.config` and the build completes successfully
 
 ### Requirement: Device tree blob
