@@ -1,11 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: Script exists and sources env.sh
-The system SHALL provide `build/build.sh`, executable, starting with `set -euo pipefail`, that sources `scripts/env.sh` for all path variables and resolves every input/output relative to those variables (never the caller's working directory).
+The system SHALL provide `scripts/build.sh`, executable, starting with `set -euo pipefail`, that sources `scripts/env.sh` for all path variables and resolves every input/output relative to those variables (never the caller's working directory).
 
 #### Scenario: Script exists and is executable
 - **WHEN** the project is set up
-- **THEN** `build/build.sh` exists and has the executable permission set
+- **THEN** `scripts/build.sh` exists and has the executable permission set
 
 ### Requirement: Toolchain installation
 The build script SHALL verify and install the `gcc-aarch64-linux-gnu` cross-compilation toolchain via `apt` if not already present.

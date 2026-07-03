@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =============================================================================
-# build/build.sh — Stage 1: cross-compile the Linux kernel for ARM64.
+# scripts/build.sh — Stage 1: cross-compile the Linux kernel for ARM64.
 #
 # Sources scripts/env.sh for all path variables (canonical source of truth).
 # Derives OUTPUT from BUILD for the kernel build output directory.

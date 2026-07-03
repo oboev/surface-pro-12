@@ -4,7 +4,7 @@ The Surface Pro 12 uses a Qualcomm Snapdragon X Plus (ARM64) SoC. There is no pr
 
 ## What Changes
 
-- Create a build script (`build/build.sh`) that cross-compiles the kernel for ARM64 from a Debian amd64 host
+- Create a build script (`scripts/build.sh`) that cross-compiles the kernel for ARM64 from a Debian amd64 host
 - Install the `gcc-aarch64-linux-gnu` cross-compilation toolchain
 - Produce individual build artifacts (kernel image, device tree blob, modules, config, System.map) in a structured output directory
 - Copy the device tree blob from the Surface Pro 12 device-tree repository (assets) rather than building from kernel source
