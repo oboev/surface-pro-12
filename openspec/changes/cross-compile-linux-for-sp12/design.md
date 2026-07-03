@@ -10,8 +10,6 @@ The host is Debian 14 (forky) x86_64. The target is Ubuntu (ARM64) on the Surfac
 - Single command to produce all kernel build artifacts from source
 - Cross-compile from Debian amd64 host to ARM64 target
 - Apply required `=y` config overrides on top of `defconfig`
-- Copy DTB from assets (device-tree repository) rather than building from source
-- Produce individual output files (Image, DTB, modules, config, System.map)
 
 **Non-Goals:**
 - Deploying the built artifacts to the target device
@@ -41,8 +39,8 @@ The host is Debian 14 (forky) x86_64. The target is Ubuntu (ARM64) on the Surfac
 ### Copy DTB from assets rather than building from kernel source
 The pre-compiled DTB (`assets/boot/dtb`) was produced by the device-tree maintainer and is calibrated to match the firmware and sensor registry data shipped with the repo. Building our own DTB from kernel source risks version drift between the DTB and the firmware calibration files.
 
-### Output to `build/output/` as individual files
-No package format (`.deb`, tarball) — just individual files arranged in a flat output directory. This matches the deployment expectation where files are manually placed into `/boot` and `/lib/modules` on the target.
+### Kernel source tree as single source of truth
+The compiled `Image`, `.config`, `System.map` all stay in the kernel source tree.
 
 ### Cross-toolchain via Debian package
 Install `gcc-aarch64-linux-gnu` from Debian repos rather than building a custom toolchain. This is the standard Debian cross-compiler package and provides `aarch64-linux-gnu-gcc` with all necessary binutils.

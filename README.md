@@ -40,7 +40,7 @@ Run from the project root. Each stage must complete successfully before the next
 ./scripts/build-kernel.sh
 ```
 
-Cross-compiles the ARM64 kernel from the `linux/` tree. Forces Surface-specific config symbols (Surface Aggregator, Surface HID, squashfs decompressors, ACPI, serial drivers, etc.). Outputs to `build/output/`: `vmlinuz`, `dtb`, `modules/`, `config`, `System.map`, `build-info.txt`.
+Cross-compiles the ARM64 kernel in the `linux/` source tree. Forces Surface-specific config symbols (Surface Aggregator, Surface HID, squashfs decompressors, ACPI, serial drivers, etc.).
 
 **Prerequisites:** `gcc-aarch64-linux-gnu`, kernel tree with compiled `Image`.
 

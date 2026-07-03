@@ -170,8 +170,6 @@ mkdir -p "${ROOTFS}/boot"
 run_with_check "Installing kernel image" \
     cp "${KERNEL_SRC}/arch/arm64/boot/Image" "${ROOTFS}/boot/vmlinuz-${REL}"
 
-# 3.3 modules — build product installed straight into the tree (not copied from
-# build/output). depmod runs against $ROOTFS during modules_install.
 run_with_check "Installing kernel modules" \
     make -C "$KERNEL_SRC" \
          ARCH=arm64 \

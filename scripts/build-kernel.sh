@@ -4,31 +4,28 @@ set -euo pipefail
 # =============================================================================
 # scripts/build-kernel.sh — Stage 1: cross-compile the Linux kernel for ARM64.
 #
-# Sources scripts/env.sh for all path variables (canonical source of truth).
-# Derives OUTPUT from BUILD for the kernel build output directory.
+# Configures and compiles a kernel from the KERNEL_SRC tree with Surface Pro 12
+# specific drivers (Surface Aggregator, Surface HID, squashfs decompressors,
+# ACPI, Snapdragon serial). Outputs live exclusively in the kernel source tree
+#
 # Cross-compiles from a Debian amd64 host targeting Snapdragon X (ARM64).
 # =============================================================================
 
 # --- 0.1 Path configuration: env.sh is the single source of truth ---
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/env.sh"
 
-# Derived: kernel build output directory (not in env.sh).
-OUTPUT="${BUILD}/output"
 CROSS_COMPILE="aarch64-linux-gnu-"
 
-# --- 7.3 Cleanup function ---
-CLEANUP_DONE=false
-cleanup() {
-    if [ "$CLEANUP_DONE" = true ]; then
-        return
-    fi
-    CLEANUP_DONE=true
-    if [ -d "$OUTPUT" ]; then
-        echo "Cleaning up partial build output..."
-        rm -rf "$OUTPUT"
+# --- Helpers -----------------------------------------------------------------
+run_with_check() {
+    local step_name="$1"
+    shift
+    echo "[BUILD] ${step_name}"
+    if ! "$@"; then
+        echo "ERROR: '${step_name}' failed (exit code $?)."
+        exit 1
     fi
 }
-trap cleanup EXIT
 
 # --- 2.1 Verify kernel source ---
 verify_kernel_source() {
@@ -41,17 +38,7 @@ verify_kernel_source() {
     echo "Kernel source verified: ${KERNEL_SRC}"
 }
 
-# --- 2.2 Verify DTB ---
-verify_dtb() {
-    if [ ! -f "${ASSETS}/boot/dtb" ]; then
-        echo "ERROR: DTB file not found at ${ASSETS}/boot/dtb"
-        echo "       Ensure the 'assets/' symlink or directory contains the device-tree package."
-        exit 1
-    fi
-    echo "DTB verified: ${ASSETS}/boot/dtb"
-}
-
-# --- 2.3 Check/install toolchain ---
+# --- 2.2 Check/install toolchain ---
 install_toolchain() {
     if command -v aarch64-linux-gnu-gcc &>/dev/null; then
         echo "Cross-toolchain already available: $(aarch64-linux-gnu-gcc --version | head -1)"
@@ -65,17 +52,6 @@ install_toolchain() {
         exit 1
     fi
     echo "Toolchain installed successfully."
-}
-
-# --- Error handling wrapper ---
-run_with_check() {
-    local step_name="$1"
-    shift
-    echo "[BUILD] ${step_name}"
-    if ! "$@"; then
-        echo "ERROR: '${step_name}' failed (exit code $?)."
-        exit 1
-    fi
 }
 
 # --- 8.x Force config options using paths anchored to KERNEL_SRC ---
@@ -109,11 +85,11 @@ force_config_symbols() {
     echo "Config normalized."
 }
 
-# --- 9.x Verify config overrides in build output ---
+# --- 9.x Verify config overrides ---
 verify_config() {
     echo ""
     echo "--- Verifying required config overrides ---"
-    CONFIG_FILE="${OUTPUT}/config"
+    CONFIG_FILE="${KERNEL_SRC}/.config"
     MISSING_SYMBOLS=()
 
     for symbol in "${REQUIRED_SYMBOLS[@]}"; do
@@ -134,7 +110,7 @@ verify_config() {
         exit 1
     fi
 
-    echo "All 16 required symbols verified as =y in build output."
+    echo "All ${#REQUIRED_SYMBOLS[@]} required symbols verified as =y in .config."
 }
 
 # =============================================================================
@@ -149,14 +125,7 @@ echo ""
 # Pre-flight checks
 echo "--- Pre-flight checks ---"
 verify_kernel_source
-verify_dtb
 install_toolchain
-echo ""
-
-# Prepare output directory
-echo "--- Preparing output ---"
-mkdir -p "$OUTPUT"
-echo "Output directory: ${OUTPUT}"
 echo ""
 
 # --- 3.1 Defconfig ---
@@ -175,52 +144,6 @@ run_with_check "Compiling kernel" \
          ARCH=arm64 \
          CROSS_COMPILE="${CROSS_COMPILE}" \
          -j"$(nproc)"
-
-# --- 3.3 Copy kernel image ---
-run_with_check "Copying kernel image" \
-    cp "${KERNEL_SRC}/arch/arm64/boot/Image" "${OUTPUT}/vmlinuz"
-echo "Kernel image: ${OUTPUT}/vmlinuz"
-
-# --- 4.1 Copy DTB ---
-run_with_check "Copying device tree blob" \
-    cp "${ASSETS}/boot/dtb" "${OUTPUT}/dtb"
-echo "Device tree blob: ${OUTPUT}/dtb"
-
-# --- 5.1-5.2 Modules ---
-echo "[BUILD] Building and installing modules..."
-run_with_check "Installing modules" \
-    make -C "$KERNEL_SRC" \
-         ARCH=arm64 \
-         CROSS_COMPILE="${CROSS_COMPILE}" \
-         modules_install \
-         INSTALL_MOD_PATH="${OUTPUT}/modules"
-echo "Modules installed to: ${OUTPUT}/modules/"
-
-# --- 6.1 Copy .config ---
-run_with_check "Copying kernel config" \
-    cp "${KERNEL_SRC}/.config" "${OUTPUT}/config"
-echo "Kernel config: ${OUTPUT}/config"
-
-# --- 6.2 Copy System.map ---
-run_with_check "Copying System.map" \
-    cp "${KERNEL_SRC}/System.map" "${OUTPUT}/System.map"
-echo "System.map: ${OUTPUT}/System.map"
-
-# --- 6.3 Build info ---
-KERNEL_VERSION=$(make -C "$KERNEL_SRC" kernelversion 2>/dev/null || echo "unknown")
-GIT_HASH=$(cd "$KERNEL_SRC" && git log --format="%h" -1 2>/dev/null || echo "not-a-git-repo")
-TOOLCHAIN_VERSION=$(aarch64-linux-gnu-gcc --version | head -1)
-
-cat > "${OUTPUT}/build-info.txt" <<EOF
-Kernel Version: ${KERNEL_VERSION}
-Git Commit: ${GIT_HASH}
-Toolchain: ${TOOLCHAIN_VERSION}
-Host: $(uname -m) $(uname -s)
-Arch: arm64
-CROSS_COMPILE: ${CROSS_COMPILE}
-Build Date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-EOF
-echo "Build info: ${OUTPUT}/build-info.txt"
 
 # --- 9.x Verify required config overrides ---
 REQUIRED_SYMBOLS=(
@@ -243,35 +166,12 @@ REQUIRED_SYMBOLS=(
 )
 verify_config
 
-# --- 7.2 Validate output files ---
-EXPECTED_FILES="vmlinuz dtb config System.map build-info.txt"
-EXPECTED_DIRS="modules"
-ALL_OK=true
-
-for f in $EXPECTED_FILES; do
-    if [ ! -f "${OUTPUT}/${f}" ]; then
-        echo "VALIDATION ERROR: Missing expected output file: ${f}"
-        ALL_OK=false
-    fi
-done
-
-for d in $EXPECTED_DIRS; do
-    if [ ! -d "${OUTPUT}/${d}" ]; then
-        echo "VALIDATION ERROR: Missing expected output directory: ${d}"
-        ALL_OK=false
-    fi
-done
-
-if [ "$ALL_OK" = false ]; then
-    echo "ERROR: Build validation failed — some expected output files are missing."
-    exit 1
-fi
-
-# Clean up trap is handled by EXIT trap, but we don't want to clean on success
-CLEANUP_DONE=true
-
 echo ""
 echo "=============================================="
 echo " Build complete!"
-echo " Output: ${OUTPUT}"
+echo " Kernel image: ${KERNEL_SRC}/arch/arm64/boot/Image"
+echo " Kernel .config: ${KERNEL_SRC}/.config"
+echo " System.map: ${KERNEL_SRC}/System.map"
+echo ""
+echo " Next: Stage 1.5 (inst-rootfs.sh) assembles the rootfs using the kernel source."
 echo "=============================================="
