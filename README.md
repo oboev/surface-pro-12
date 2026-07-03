@@ -34,6 +34,14 @@ sudo ./scripts/flash-install.sh /dev/sdX
 
 Run from the project root. Each stage must complete successfully before the next.
 
+## Stage 0 (optional): Clean state
+
+```bash
+sudo ./scripts/cleanup.sh
+```
+
+Removes every build-generated artifact so the pipeline runs from scratch: the entire `build/` tree plus the in-tree kernel build (`git clean -dfx` in the kernel checkout — config, intermediates, objects, `vmlinux`, `Image`). Prints a summary with sizes and requires an exact `yes` confirmation; idempotent and requires root.
+
 ## Stage 1: Cross-compile kernel
 
 ```bash
