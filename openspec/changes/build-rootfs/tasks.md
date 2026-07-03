@@ -42,9 +42,9 @@
 ## 6. Chroot — user and system configuration
 
 - [ ] 6.1 Set hostname to `surface-sp12` in `/etc/hostname`
-- [ ] 6.2 Create user `aleksey` with groups `sudo,adm,plugdev,netdev,video,audio,render`
-- [ ] 6.3 Set passwords: `aleksey:surface` and `root:surface`
-- [ ] 6.4 Create `/etc/gdm3/custom.conf` with GDM autologin for `aleksey`
+- [ ] 6.2 Create user `myuser` with groups `sudo,adm,plugdev,netdev,video,audio,render`
+- [ ] 6.3 Set passwords: `myuser:surface` and `root:surface`
+- [ ] 6.4 Create `/etc/gdm3/custom.conf` with GDM autologin for `myuser`
 - [ ] 6.5 Set systemd default target to `graphical.target`
 
 ## 7. Cleanup and reporting
@@ -68,7 +68,7 @@
 - [ ] 8.2.4 After extraction, `/`, `/usr`, `/etc` are 755; a non-755 result aborts
 - [ ] 8.2.5 `boot/vmlinuz-<release>`, `lib/modules/<release>/`, `lib/firmware/`, `boot/surface.dtb`, and (if present) `/usr` assets exist
 - [ ] 8.2.6 `/etc/apt/sources.list` contains exactly the resolute / -updates / -security ports entries (no unspecified pockets)
-- [ ] 8.2.7 User `aleksey` exists with the specified groups; both passwords are set
+- [ ] 8.2.7 User `myuser` exists with the specified groups; both passwords are set
 - [ ] 8.2.8 `/etc/hostname` = `surface-sp12`; `/etc/gdm3/custom.conf` has autologin
 - [ ] 8.2.9 `/etc/systemd/system/default.target` is a symlink to `graphical.target` AND the link target exists
 - [ ] 8.2.10 No bind mounts remain under the rootfs on success
@@ -77,7 +77,7 @@
 - [ ] 8.3.1 Script completes end-to-end with exit code 0
 - [ ] 8.3.2 Deliberately fail a mid-chroot step (e.g. rename `useradd`); confirm the EXIT trap unmounts `/dev`, `/dev/pts`, `/proc`,`/sys` — no leaked mounts
 - [ ] 8.3.3 `readlink -f <rootfs>/etc/systemd/system/default.target` resolves to a real `graphical.target`
-- [ ] 8.3.4 `chroot <rootfs> passwd -S aleksey` reports a set password (P), not locked/empty
+- [ ] 8.3.4 `chroot <rootfs> passwd -S myuser` reports a set password (P), not locked/empty
   
   ### 8.4 Regression checks (one per bug that escaped last time)
 - [ ] 8.4.1 The bind-mount loop uses valid bash and maps `/sys` (not `/sysfs`)

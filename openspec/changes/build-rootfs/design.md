@@ -8,7 +8,7 @@ The Surface Pro 12 uses a Qualcomm Snapdragon X Plus (ARM64) SoC. The cross-comp
 - Produce a complete rootfs tree (`$BUILD/inst/root`) that boots to GNOME on the SP12
 - Inject the cross-compiled kernel and modules, plus the Surface firmware and DTB (from `$ASSETS`), into the tree
 - Configure apt to use the arm64 ports mirror (not the ISO's `file:/cdrom` source)
-- Create user `aleksey` with password, enable GDM autologin, set hostname, default target = graphical.target
+- Create user `myuser` with password, enable GDM autologin, set hostname, default target = graphical.target
 - Extract from ISO's `minimal.squashfs` (not the full desktop squashfs) to minimize size
 
 **Non-Goals:**

@@ -58,7 +58,7 @@ Cross-compiles the ARM64 kernel in the `linux/` source tree. Forces Surface-spec
 sudo ./scripts/inst-rootfs.sh
 ```
 
-Extracts the ISO's `casper/minimal.squashfs` into `build/inst/root/`, injects the custom kernel + modules + firmware + DTB, then chroots (via `qemu-aarch64-static` + binfmt) to configure apt for the arm64 ports mirror, create user `aleksey` (password `surface`), enable GDM3 autologin, and set `graphical.target` as default.
+Extracts the ISO's `casper/minimal.squashfs` into `build/inst/root/`, injects the custom kernel + modules + firmware + DTB, then chroots (via `qemu-aarch64-static` + binfmt) to configure apt for the arm64 ports mirror, create user `myuser` (password `surface`), enable GDM3 autologin, and set `graphical.target` as default.
 
 **Prerequisites:** Stage 1 complete, `qemu-user-static` with binfmt handler registered, run as root.
 
