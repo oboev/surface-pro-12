@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
-### Requirement: Build script exists and is executable
-The system SHALL provide a build script at `build/build.sh` that is executable and builds all kernel artifacts in one invocation.
+### Requirement: Script exists and sources env.sh
+The system SHALL provide `build/build.sh`, executable, starting with `set -euo pipefail`, that sources `scripts/env.sh` for all path variables and resolves every input/output relative to those variables (never the caller's working directory).
 
 #### Scenario: Script exists and is executable
 - **WHEN** the project is set up

@@ -2,16 +2,18 @@
 set -euo pipefail
 
 # =============================================================================
-# Surface Pro 12 Kernel Build Script
-# Cross-compiles the Linux kernel for ARM64 from a Debian amd64 host.
+# build/build.sh — Stage 1: cross-compile the Linux kernel for ARM64.
+#
+# Sources scripts/env.sh for all path variables (canonical source of truth).
+# Derives OUTPUT from BUILD for the kernel build output directory.
+# Cross-compiles from a Debian amd64 host targeting Snapdragon X (ARM64).
 # =============================================================================
 
-# --- 1.2 Constants ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-KERNEL_SRC="${PROJECT_DIR}/linux"
-ASSETS="${PROJECT_DIR}/assets"
-OUTPUT="${PROJECT_DIR}/build/output"
+# --- 0.1 Path configuration: env.sh is the single source of truth ---
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/env.sh"
+
+# Derived: kernel build output directory (not in env.sh).
+OUTPUT="${BUILD}/output"
 CROSS_COMPILE="aarch64-linux-gnu-"
 
 # --- 7.3 Cleanup function ---
