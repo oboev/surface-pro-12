@@ -76,6 +76,12 @@ force_config_symbols() {
             "$KERNEL_SRC/scripts/config" --file "$KERNEL_SRC/.config" -e "$sym"
     done
 
+    # 8.5 Compressed firmware loading
+    for sym in CONFIG_FW_LOADER_COMPRESS CONFIG_FW_LOADER_COMPRESS_ZSTD; do
+        run_with_check "Enabling $sym" \
+            "$KERNEL_SRC/scripts/config" --file "$KERNEL_SRC/.config" -e "$sym"
+    done
+
     # 8.6 Normalize config: resolve dependency constraints
     run_with_check "Running olddefconfig to normalize .config" \
         make -C "$KERNEL_SRC" \
@@ -159,6 +165,8 @@ REQUIRED_SYMBOLS=(
     "CONFIG_SURFACE_AGGREGATOR_TABLET_SWITCH=y"
     "CONFIG_SURFACE_HID=y"
     "CONFIG_SURFACE_HID_CORE=y"
+    "CONFIG_FW_LOADER_COMPRESS=y"
+    "CONFIG_FW_LOADER_COMPRESS_ZSTD=y"
     "CONFIG_SERIAL_DEV_BUS=y"
     "CONFIG_SERIAL_QCOM_GENI=y"
     "CONFIG_SURFACE_PLATFORMS=y"

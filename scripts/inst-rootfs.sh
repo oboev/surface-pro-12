@@ -182,6 +182,12 @@ mkdir -p "${ROOTFS}/lib/firmware"
 run_with_check "Installing Surface firmware" \
     cp -a "${ASSETS}/lib/." "${ROOTFS}/lib/"
 
+# 3.5b project-local firmware overlay. Holds the ath12k WCN7850 board.bin Wi-Fi fixup.
+if [ -d "$FIRMWARE" ]; then
+    run_with_check "Installing project-local firmware overlay" \
+        cp -a "${FIRMWARE}/." "${ROOTFS}/lib/firmware/"
+fi
+
 # 3.6 optional /usr assets (e.g. qcom acdbdata) if present.
 if [ -d "${ASSETS}/usr" ]; then
     run_with_check "Installing /usr assets" \

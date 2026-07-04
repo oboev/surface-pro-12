@@ -31,6 +31,7 @@ ISO_PATH="${PROJECT_DIR}/resolute-desktop-arm64+x1e.iso"
 KERNEL_SRC="${PROJECT_DIR}/linux"
 BUILD="${PROJECT_DIR}/build"
 ASSETS="${PROJECT_DIR}/assets"
+FIRMWARE="${PROJECT_DIR}/firmware"
 
 # ── Outputs ──────────────────────────────────────────────────────────────────
 # Resolve with `realpath -m`: it produces an absolute path even for a path that
