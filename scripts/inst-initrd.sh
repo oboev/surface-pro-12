@@ -29,12 +29,16 @@ KERNEL_RELEASE_FILE="${KERNEL_SRC}/include/config/kernel.release"
 STAGING="${BUILD}/inst/initramfs"               # scratch tree cpio'd into the initrd
 SQUASHFS="${OUT}/rootfs.squashfs"
 INITRD="${OUT}/sp12-install.initrd"
-# A statically-linked aarch64 busybox for the initramfs. The rootfs ships one
-# via the busybox-static package (usr/bin/busybox), so default to that — it is
-# self-contained and version-matched. Override with BUSYBOX=/path if needed.
-# Verified static+aarch64 below, so a wrong binary aborts loudly rather than
-# producing an unbootable initramfs.
-BUSYBOX="${BUSYBOX:-${ROOTFS}/usr/bin/busybox}"
+# A statically-linked aarch64 busybox for the initramfs. Alpine/pmOS ships it via
+# the busybox-static package at /bin/busybox.static (musl, static), so prefer that;
+# fall back to /usr/bin/busybox (Debian/Ubuntu busybox-static). Alpine's plain
+# /bin/busybox is musl-*dynamic* and would fail the static check below. Override
+# with BUSYBOX=/path if needed. Verified static+aarch64 below, so a wrong binary
+# aborts loudly rather than producing an unbootable initramfs.
+if   [ -n "${BUSYBOX:-}" ];                 then :   # caller-provided, honored as-is
+elif [ -f "${ROOTFS}/bin/busybox.static" ]; then BUSYBOX="${ROOTFS}/bin/busybox.static"
+else                                             BUSYBOX="${ROOTFS}/usr/bin/busybox"
+fi
 # Applets /init needs, symlinked to /bin/busybox (plus a few for the rescue shell).
 APPLETS=(sh mount umount insmod losetup switch_root mkdir ls cat)
 # Hard cap: newc cpio AND FAT32 each cap a single file at 4 GiB.

@@ -2,15 +2,16 @@
 set -euo pipefail
 
 # =============================================================================
-# scripts/inst-rootfs.sh — Stage 1.5: build the RAM-boot rootfs tree.
+# scripts/inst-rootfs.sh — Stage 1.5: build the RAM-boot rootfs tree (postmarketOS).
 #
-# Extracts the Resolute ISO's casper/minimal.squashfs into $ROOTFS, injects the
-# cross-compiled 7.2 kernel + modules + Surface firmware + DTB, then chroots
-# (via the qemu-aarch64 binfmt handler) to reconfigure apt for the arm64 ports
-# mirror, create the user, enable GDM autologin, and set the default target.
+# Decompresses the postmarketOS trailblazer image ($ISO_PATH — a GPT .img.xz whose
+# second partition is the ext4 aarch64 root), loop-mounts that root partition,
+# rsyncs it into $ROOTFS, injects the cross-compiled kernel + modules + Surface
+# firmware + DTB, then chroots (via the qemu-aarch64 binfmt handler) to install a
+# static busybox, set the root password, and set the hostname.
 #
-# The result ($BUILD/inst/root) is a complete Ubuntu arm64 rootfs that Stage 2
-# packs into a squashfs and embeds in the initrd for RAM-only boot.
+# The result ($BUILD/inst/root) is a complete pmOS/Alpine aarch64 rootfs that
+# Stage 2 packs into a squashfs and embeds in the initrd for RAM-only boot.
 #
 # Runs as root on the x86_64 build host. Every write/mount MUST target
 # "${ROOTFS}/…" or "chroot ${ROOTFS}" — a bare host path would corrupt the host.
@@ -22,15 +23,15 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
 # Fixed knobs for this stage.
 CROSS_COMPILE="aarch64-linux-gnu-"
-SQUASHFS_REL="casper/minimal.squashfs"   # ISO-relative path to the base rootfs
 KERNEL_RELEASE_FILE="${KERNEL_SRC}/include/config/kernel.release"
-UBUNTU_SUITE="resolute"                   # Ubuntu 26.04 codename (the ISO's release)
-PORTS_MIRROR="http://ports.ubuntu.com/ubuntu-ports"
-TARGET_USER="myuser"
-USER_PASSWORD="surface"
-ROOT_PASSWORD="surface"
 TARGET_HOSTNAME="surface-sp12"
-USER_GROUPS="sudo,adm,plugdev,netdev,video,audio,render"
+ROOT_PASSWORD="surface"
+
+# Scratch: the decompressed image, plus the loop device holding it (set once
+# attached, used by cleanup to detach). The image's root partition (p2) is mounted
+# at $ISO_MOUNT — reused as the generic "source" mount point.
+SRC_IMG="${BUILD}/inst/src.img"
+LOOP=""
 
 # Bind mounts we set up for the chroot, in mount order. Unmounted in reverse.
 CHROOT_BINDS=(dev dev/pts proc sys)
@@ -46,8 +47,9 @@ run_with_check() {
     fi
 }
 
-# Unmount every chroot bind (reverse order) plus the ISO, if still mounted.
-# Idempotent and non-fatal: safe to call from the EXIT trap on any exit path.
+# Unmount every chroot bind (reverse order) plus the source mount, then detach the
+# loop device. Idempotent and non-fatal: safe to call from the EXIT trap on any
+# exit path.
 unmount_all() {
     local i target
     for (( i=${#CHROOT_BINDS[@]}-1; i>=0; i-- )); do
@@ -59,10 +61,14 @@ unmount_all() {
     if mountpoint -q "$ISO_MOUNT"; then
         umount "$ISO_MOUNT" 2>/dev/null || umount -l "$ISO_MOUNT" 2>/dev/null || true
     fi
+    if [ -n "$LOOP" ]; then
+        losetup -d "$LOOP" 2>/dev/null || true
+        LOOP=""
+    fi
 }
 
-# EXIT trap: preserve the real exit status, always clean up mounts. Installed
-# before the first mount so a failure at ANY later step still unmounts.
+# EXIT trap: preserve the real exit status, always clean up mounts + loop. Installed
+# before the first mount so a failure at ANY later step still unwinds.
 cleanup() {
     local rc=$?
     unmount_all
@@ -73,7 +79,7 @@ cleanup() {
 # 1. Verify prerequisites
 # =============================================================================
 echo "=============================================="
-echo " Surface Pro 12 rootfs build (Stage 1.5)"
+echo " Surface Pro 12 rootfs build (Stage 1.5, pmOS)"
 echo "=============================================="
 
 # Must be root: loop-mount, chroot, and modules_install (owned by root) require it.
@@ -84,8 +90,8 @@ BINFMT="/proc/sys/fs/binfmt_misc/qemu-aarch64"
 [ -e "$BINFMT" ] || die "qemu-aarch64 binfmt not registered. Install qemu-user-static and register binfmts."
 grep -q '^enabled' "$BINFMT" || die "qemu-aarch64 binfmt is registered but disabled."
 
-# 1.1 Resolute ISO
-[ -f "$ISO_PATH" ] || die "Resolute ISO not found at ${ISO_PATH}"
+# 1.1 pmOS source image (a GPT .img.xz).
+[ -f "$ISO_PATH" ] || die "pmOS image not found at ${ISO_PATH}"
 
 # 1.2 kernel source with the compiled ARM64 Image
 [ -f "${KERNEL_SRC}/arch/arm64/boot/Image" ] \
@@ -98,9 +104,14 @@ grep -q '^enabled' "$BINFMT" || die "qemu-aarch64 binfmt is registered but disab
 # 1.3 Surface DTB
 [ -f "${ASSETS}/boot/dtb" ] || die "DTB not found at ${ASSETS}/boot/dtb"
 
-# 1.4 output dirs can be created (parent must be writable; $ROOTFS itself is
-# created by unsquashfs, so we only ensure its parent and the ISO mount point).
-mkdir -p "$(dirname "$ROOTFS")" "$ISO_MOUNT" \
+# 1.4 host tools needed for the image → rootfs path.
+for tool in xz losetup partx rsync; do
+    command -v "$tool" >/dev/null || die "${tool} not found (needed to decompress + loop-mount the pmOS image)."
+done
+
+# 1.5 output dirs can be created. $ROOTFS itself is created below (rsync target);
+# ensure its parent, the source mount point, and the scratch image's dir exist.
+mkdir -p "$(dirname "$ROOTFS")" "$(dirname "$SRC_IMG")" "$ISO_MOUNT" \
     || die "Cannot create build output directories under $(dirname "$ROOTFS")"
 
 echo "Prerequisites OK."
@@ -126,36 +137,61 @@ if [ -e "$ROOTFS" ]; then
     rm -rf "$ROOTFS"
 fi
 
-# Install the cleanup trap now: every mount from here on is unwound on any exit.
+# Install the cleanup trap now: every mount/loop from here on is unwound on any exit.
 trap cleanup EXIT
 
 # =============================================================================
-# 2. ISO mount and squashfs extraction
+# 2. Decompress the image, loop-mount its root partition, rsync into $ROOTFS
 # =============================================================================
-# 2.1 mount the ISO read-only via loop.
-run_with_check "Mounting ISO read-only" \
-    mount -o loop,ro "$ISO_PATH" "$ISO_MOUNT"
+# 2.1 decompress (skip if the expanded image is already present). On failure,
+# remove the partial output so a later run does not "skip" a corrupt image.
+if [ -f "$SRC_IMG" ]; then
+    echo "[ROOTFS] Using existing decompressed image ${SRC_IMG}"
+else
+    echo "[ROOTFS] Decompressing $(basename "$ISO_PATH")"
+    if ! xz -dc "$ISO_PATH" > "$SRC_IMG"; then
+        rm -f "$SRC_IMG"
+        die "Failed to decompress ${ISO_PATH}."
+    fi
+fi
 
-# 2.2 the base squashfs must exist inside the ISO.
-[ -f "${ISO_MOUNT}/${SQUASHFS_REL}" ] \
-    || die "${SQUASHFS_REL} not found inside the ISO — wrong ISO or layout changed."
+# 2.2 attach with partition scanning so ${LOOP}p2 appears. losetup -P derives the
+# partition table itself — no hardcoded sector offset.
+echo "[ROOTFS] Attaching ${SRC_IMG} via loop (with partition scan)"
+LOOP="$(losetup -Pf --show "$SRC_IMG")" || die "losetup failed for ${SRC_IMG}."
+[ -n "$LOOP" ] || die "losetup returned no device for ${SRC_IMG}."
 
-# 2.2 extract. NOTE: no -f, and $ROOTFS must NOT pre-exist — unsquashfs -d owns
-# and creates it. -f corrupts top-level perms to 700 (known project footgun).
-run_with_check "Extracting ${SQUASHFS_REL}" \
-    unsquashfs -d "$ROOTFS" "${ISO_MOUNT}/${SQUASHFS_REL}"
+# 2.3 the ext4 root is the SECOND partition. Confirm the layout dynamically (>=2
+# partitions per the table) and that the kernel created the p2 node.
+NPART="$(partx -g -o NR "$SRC_IMG" | wc -l)"
+[ "$NPART" -ge 2 ] || die "Expected >=2 partitions in ${SRC_IMG}, found ${NPART}."
+P2="${LOOP}p2"
+[ -b "$P2" ] \
+    || die "Root partition ${P2} not found. partx table:
+$(partx -o NR,START,SECTORS,TYPE "$SRC_IMG" 2>/dev/null)"
 
-# 2.3 the ISO is no longer needed — unmount immediately and verify.
-run_with_check "Unmounting ISO" umount "$ISO_MOUNT"
-mountpoint -q "$ISO_MOUNT" && die "ISO still mounted at ${ISO_MOUNT} after umount."
+# 2.4 mount the root partition read-only (we only copy out of it).
+run_with_check "Mounting pmOS root (p2) read-only" \
+    mount -o ro "$P2" "$ISO_MOUNT"
 
-# 2.4 / 2.5 sanity check: extraction must leave 755 on /, /usr, /etc.
-for d in "" /usr /etc; do
-    perm="$(stat -c '%a' "${ROOTFS}${d}")"
-    [ "$perm" = "755" ] \
-        || die "Bad permissions on ${ROOTFS}${d}: expected 755, got ${perm} (unsquashfs corruption?)."
+# 2.5 copy the whole root into $ROOTFS with rsync — preserve hardlinks, ACLs,
+# xattrs, and numeric ownership (the chroot runs under qemu, so names needn't
+# resolve on the host).
+run_with_check "Creating rootfs dir" mkdir -p "$ROOTFS"
+run_with_check "Copying pmOS root into rootfs (rsync)" \
+    rsync -aHAX --numeric-ids "${ISO_MOUNT}/" "${ROOTFS}/"
+
+# 2.6 done with the image — unmount and detach immediately.
+run_with_check "Unmounting pmOS root" umount "$ISO_MOUNT"
+mountpoint -q "$ISO_MOUNT" && die "p2 still mounted at ${ISO_MOUNT} after umount."
+run_with_check "Detaching loop device" losetup -d "$LOOP"
+LOOP=""
+
+# 2.7 sanity: the copy must look like a real root filesystem.
+for d in "" /usr /etc /sbin; do
+    [ -d "${ROOTFS}${d}" ] || die "Copied rootfs missing ${d:-/} — rsync incomplete?"
 done
-echo "Extraction verified (/, /usr, /etc are 755)."
+echo "Rootfs copy verified (/, /usr, /etc, /sbin present)."
 
 # =============================================================================
 # 3. Inject kernel, modules, firmware, DTB
@@ -201,7 +237,7 @@ run_with_check "Installing device tree blob" \
 # =============================================================================
 # 4. Chroot — prepare mounts
 # =============================================================================
-# 4.1 resolv.conf so apt can resolve names inside the chroot.
+# 4.1 resolv.conf so apk can resolve names inside the chroot.
 run_with_check "Copying resolv.conf into rootfs" \
     cp --dereference /etc/resolv.conf "${ROOTFS}/etc/resolv.conf"
 
@@ -215,91 +251,52 @@ run_with_check "Mounting sysfs"         mount -t sysfs sys     "${ROOTFS}/sys"
 
 # Convenience wrapper for commands that must run inside the target.
 in_chroot() { chroot "$ROOTFS" "$@"; }
-export DEBIAN_FRONTEND=noninteractive
 
 # =============================================================================
-# 5. Chroot — apt configuration
+# 5. Chroot — pmOS (OpenRC) configuration for a console login
 # =============================================================================
-# 5.1 disable every live-media apt source (both classic .list and deb822 .sources)
-# so nothing points at file:/cdrom, which does not exist off the ISO.
-echo "[ROOTFS] Disabling live-media apt sources"
-if [ -f "${ROOTFS}/etc/apt/sources.list" ]; then
-    mv "${ROOTFS}/etc/apt/sources.list" "${ROOTFS}/etc/apt/sources.list.disabled"
+# 5.1 busybox-static: Stage 2 embeds a STATIC aarch64 busybox in the RAM-boot
+# initramfs. Alpine ships it via the busybox-static package at /bin/busybox.static.
+# Skip if already present; otherwise apk-add it (needs network in the chroot).
+if [ -f "${ROOTFS}/bin/busybox.static" ]; then
+    echo "[ROOTFS] busybox-static already present"
+else
+    echo "[ROOTFS] Installing busybox-static via apk"
+    if ! in_chroot apk add busybox-static; then
+        die "apk add busybox-static failed — needs network inside the chroot, or pre-stage a static busybox at ${ROOTFS}/bin/busybox.static."
+    fi
+    [ -f "${ROOTFS}/bin/busybox.static" ] \
+        || die "apk add busybox-static reported success but ${ROOTFS}/bin/busybox.static is missing."
 fi
-if [ -d "${ROOTFS}/etc/apt/sources.list.d" ]; then
-    for f in "${ROOTFS}/etc/apt/sources.list.d/"*.list "${ROOTFS}/etc/apt/sources.list.d/"*.sources; do
-        [ -e "$f" ] || continue   # nullglob-free guard: skip the literal pattern
-        mv "$f" "${f}.disabled"
-    done
-fi
 
-# 5.2 pin apt to the arm64 ports mirror — exactly resolute / -updates / -security.
-run_with_check "Writing arm64 ports sources.list" \
-    tee "${ROOTFS}/etc/apt/sources.list" <<EOF
-deb ${PORTS_MIRROR} ${UBUNTU_SUITE} main restricted universe multiverse
-deb ${PORTS_MIRROR} ${UBUNTU_SUITE}-updates main restricted universe multiverse
-deb ${PORTS_MIRROR} ${UBUNTU_SUITE}-security main restricted universe multiverse
-EOF
+# 5.2 root password — console login is root (no user account created).
+echo "[ROOTFS] Setting root password"
+printf 'root:%s\n' "$ROOT_PASSWORD" | in_chroot chpasswd \
+    || die "Setting root password failed."
 
-# 5.3 refresh package lists against the new mirror.
-run_with_check "apt-get update" in_chroot apt-get update
-
-# =============================================================================
-# 6. Chroot — user and system configuration
-# =============================================================================
-# 6.1 hostname.
+# 5.3 hostname.
 run_with_check "Setting hostname" \
     tee "${ROOTFS}/etc/hostname" <<<"$TARGET_HOSTNAME"
 
-# 6.2 user account. Verify each required group exists first so useradd -G can't
-# fail halfway and leave a half-created account.
-echo "[ROOTFS] Creating user ${TARGET_USER}"
-IFS=',' read -r -a _groups <<<"$USER_GROUPS"
-for g in "${_groups[@]}"; do
-    in_chroot getent group "$g" >/dev/null \
-        || die "Required group '${g}' missing in rootfs — cannot add ${TARGET_USER} to it."
-done
-run_with_check "useradd ${TARGET_USER}" \
-    in_chroot useradd --create-home --shell /bin/bash --groups "$USER_GROUPS" "$TARGET_USER"
+# 5.4 RAM boot: neutralize the image's own fstab. The rsync'd pmOS root (which
+# runs systemd) still lists its original ext4 root, the ESP (/boot, e.g. FAT
+# UUID 98A5-E1A0), and TPM devices — none of which exist in a RAM boot. Left in
+# place, systemd-remount-fs fails and systemd waits ~90s on each phantom device
+# before dropping to emergency.service (sulogin) instead of a console getty.
+# Root comes from the initrd overlay, so nothing here needs mounting.
+run_with_check "Neutralizing fstab for RAM boot" \
+    tee "${ROOTFS}/etc/fstab" <<<"# RAM boot — root provided by initrd overlay; no disk mounts"
+# Mask the disk-bound units that would otherwise fail/hang on the absent devices.
+in_chroot systemctl mask systemd-remount-fs.service systemd-fsck-root.service \
+    2>/dev/null || true
 
-# 6.3 passwords. chpasswd gets ONLY user:password lines on stdin (no log output),
-# and pipefail makes a chroot/chpasswd failure abort the script.
-echo "[ROOTFS] Setting passwords"
-printf '%s:%s\n%s:%s\n' \
-    "$TARGET_USER" "$USER_PASSWORD" \
-    "root" "$ROOT_PASSWORD" \
-    | in_chroot chpasswd
-
-# 6.4 GDM autologin.
-run_with_check "Creating gdm3 autologin config" mkdir -p "${ROOTFS}/etc/gdm3"
-run_with_check "Writing gdm3 custom.conf" \
-    tee "${ROOTFS}/etc/gdm3/custom.conf" <<EOF
-[daemon]
-AutomaticLoginEnable=true
-AutomaticLogin=${TARGET_USER}
-EOF
-
-# 6.5 default target = graphical.target. Link straight at the unit file (never a
-# SysV init.d / runlevel path). Resolve where systemd units actually live in
-# this rootfs (usrmerge → /lib is a symlink to /usr/lib, but be explicit).
-if   [ -f "${ROOTFS}/usr/lib/systemd/system/graphical.target" ]; then
-    GRAPHICAL_UNIT="/usr/lib/systemd/system/graphical.target"
-elif [ -f "${ROOTFS}/lib/systemd/system/graphical.target" ]; then
-    GRAPHICAL_UNIT="/lib/systemd/system/graphical.target"
-else
-    die "graphical.target unit not found in rootfs — is this a systemd userspace?"
-fi
-mkdir -p "${ROOTFS}/etc/systemd/system"
-run_with_check "Setting default target to graphical.target" \
-    ln -sf "$GRAPHICAL_UNIT" "${ROOTFS}/etc/systemd/system/default.target"
-# Verify the symlink resolves to a real file (guards against a dangling link).
-[ -f "$(readlink -f "${ROOTFS}/etc/systemd/system/default.target")" ] \
-    || die "default.target symlink does not resolve to a real unit."
+# 5.5 sanity: init must exist for Stage 2's `switch_root /sbin/init`.
+[ -e "${ROOTFS}/sbin/init" ] || die "/sbin/init missing in rootfs — not a bootable pmOS root?"
 
 # =============================================================================
-# 7. Cleanup and reporting
+# 6. Cleanup and reporting
 # =============================================================================
-# 7.1 unmount chroot binds (the trap would also do this; do it now so the size
+# 6.1 unmount chroot binds (the trap would also do this; do it now so the size
 # report and the leaked-mount check see a clean tree).
 echo "[ROOTFS] Unmounting chroot binds"
 unmount_all
@@ -310,23 +307,23 @@ if findmnt -rno TARGET | grep -q -E "^${ROOTFS}(/|$)"; then
 $(findmnt -rno TARGET | grep -E "^${ROOTFS}(/|$)")"
 fi
 
-# 7.2 remove the (now-unmounted) ISO mount point.
+# 6.2 remove the (now-unmounted) source mount point.
 rmdir "$ISO_MOUNT" 2>/dev/null || true
 
 # Everything succeeded — disarm the trap so its exit code can't mask success.
 trap - EXIT
 
-# 7.3 size summary.
+# 6.3 size summary.
 ROOTFS_SIZE="$(du -sh "$ROOTFS" | cut -f1)"
 
-# 7.4 completion message.
+# 6.4 completion message.
 echo ""
 echo "=============================================="
 echo " Rootfs build complete!"
 echo "   Tree:    ${ROOTFS}"
 echo "   Size:    ${ROOTFS_SIZE}"
 echo "   Kernel:  vmlinuz-${REL}  (+ modules, firmware, surface.dtb)"
-echo "   User:    ${TARGET_USER} (autologin), hostname ${TARGET_HOSTNAME}"
+echo "   Login:   root / ${ROOT_PASSWORD} (console), hostname ${TARGET_HOSTNAME}"
 echo ""
 echo " Next: Stage 2 (inst-initrd.sh) packs this tree into rootfs.squashfs"
 echo "       and embeds it in the RAM-boot initrd."

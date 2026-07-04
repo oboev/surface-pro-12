@@ -33,7 +33,11 @@ GRUB_MODULES_DIR="/usr/lib/grub/${GRUB_TARGET}"
 # clk_ignore_unused + pd_ignore_unused are REQUIRED on Snapdragon: without them
 # the kernel gates "unused" clocks/power domains late in boot — including the
 # display controller (MDSS/DPU) — and the panel goes black.
-BASE_CMDLINE="rw console=tty0 clk_ignore_unused pd_ignore_unused"
+# cma=128M reserves a contiguous DMA pool for ath12k (WCN7850 Wi-Fi): under RAM
+# boot the squashfs+overlay fragments memory, so ath12k's ~7 MB QMI DMA alloc
+# fails ("qmi dma allocation failed") and Wi-Fi bring-up is flaky. A dedicated
+# CMA region makes it reliable (not needed on the disk-backed Ubuntu boot).
+BASE_CMDLINE="rw console=tty0 clk_ignore_unused pd_ignore_unused cma=128M"
 # GRUB modules to bake into the core image so the entry can insmod them and set
 # up the EFI framebuffer (all_video) the kernel inherits.
 GRUB_CORE_MODULES="part_gpt fat search search_label search_fs_uuid normal configfile linux fdt all_video gzio echo test"

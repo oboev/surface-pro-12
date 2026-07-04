@@ -27,7 +27,10 @@ PROJECT_DIR="$(cd "${_ENV_SH_DIR}/.." && pwd)"
 unset _ENV_SH_DIR
 
 # ── Inputs ───────────────────────────────────────────────────────────────────
-ISO_PATH="${PROJECT_DIR}/iso/resolute-desktop-arm64+x1e.iso"
+# Rootfs source: the prebuilt postmarketOS trailblazer image (a GPT .img.xz whose
+# p2 is the ext4 aarch64 root). Kept under the name ISO_PATH — the single "rootfs
+# source image" variable Stage 1.5 consumes — even though it is now an .img.xz.
+ISO_PATH="${PROJECT_DIR}/iso/20260704-0052-postmarketOS-edge-console-0.1-postmarketos-trailblazer-next.img.xz"
 KERNEL_SRC="${PROJECT_DIR}/linux"
 BUILD="${PROJECT_DIR}/build"
 ASSETS="${PROJECT_DIR}/assets"
