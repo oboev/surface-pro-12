@@ -2,13 +2,16 @@
 set -euo pipefail
 
 # =============================================================================
-# scripts/inst-rootfs.sh — Stage 1.5: build the RAM-boot rootfs tree (postmarketOS).
+# scripts/inst-rootfs.sh — Stage 1.5: build the RAM-boot rootfs tree (postmarketOS GNOME).
 #
-# Decompresses the postmarketOS trailblazer image ($ISO_PATH — a GPT .img.xz whose
-# second partition is the ext4 aarch64 root), loop-mounts that root partition,
+# Decompresses the postmarketOS trailblazer GNOME image ($ISO_PATH — a GPT .img.xz
+# whose second partition is the ext4 aarch64 root), loop-mounts that root partition,
 # rsyncs it into $ROOTFS, injects the cross-compiled kernel + modules + Surface
 # firmware + DTB, then chroots (via the qemu-aarch64 binfmt handler) to install a
-# static busybox, set the root password, and set the hostname.
+# static busybox, set the root password and hostname, and provision a graphical
+# session: a non-root user with GDM autologin into GNOME (mutter/Wayland won't run
+# as root, and a RAM boot discards pmOS's own first-boot user setup, so we create
+# the user here).
 #
 # The result ($BUILD/inst/root) is a complete pmOS/Alpine aarch64 rootfs that
 # Stage 2 packs into a squashfs and embeds in the initrd for RAM-only boot.
@@ -26,6 +29,10 @@ CROSS_COMPILE="aarch64-linux-gnu-"
 KERNEL_RELEASE_FILE="${KERNEL_SRC}/include/config/kernel.release"
 TARGET_HOSTNAME="surface-sp12"
 ROOT_PASSWORD="surface"
+# GNOME can't run as root, so a non-root user is created and GDM autologs it in.
+# postmarketOS convention is user "user".
+TARGET_USER="user"
+USER_PASSWORD="surface"
 
 # Scratch: the decompressed image, plus the loop device holding it (set once
 # attached, used by cleanup to detach). The image's root partition (p2) is mounted
@@ -143,9 +150,11 @@ trap cleanup EXIT
 # =============================================================================
 # 2. Decompress the image, loop-mount its root partition, rsync into $ROOTFS
 # =============================================================================
-# 2.1 decompress (skip if the expanded image is already present). On failure,
-# remove the partial output so a later run does not "skip" a corrupt image.
-if [ -f "$SRC_IMG" ]; then
+# 2.1 decompress. Reuse an existing expansion ONLY if it is newer than the source
+# .img.xz — otherwise a run that repointed $ISO_PATH (e.g. console → GNOME) would
+# silently rsync the stale image. On failure, remove the partial output so a later
+# run does not "skip" a corrupt image.
+if [ -f "$SRC_IMG" ] && [ "$SRC_IMG" -nt "$ISO_PATH" ]; then
     echo "[ROOTFS] Using existing decompressed image ${SRC_IMG}"
 else
     echo "[ROOTFS] Decompressing $(basename "$ISO_PATH")"
@@ -253,7 +262,7 @@ run_with_check "Mounting sysfs"         mount -t sysfs sys     "${ROOTFS}/sys"
 in_chroot() { chroot "$ROOTFS" "$@"; }
 
 # =============================================================================
-# 5. Chroot — pmOS (OpenRC) configuration for a console login
+# 5. Chroot — pmOS (systemd) configuration for a GNOME graphical session
 # =============================================================================
 # 5.1 busybox-static: Stage 2 embeds a STATIC aarch64 busybox in the RAM-boot
 # initramfs. Alpine ships it via the busybox-static package at /bin/busybox.static.
@@ -269,7 +278,7 @@ else
         || die "apk add busybox-static reported success but ${ROOTFS}/bin/busybox.static is missing."
 fi
 
-# 5.2 root password — console login is root (no user account created).
+# 5.2 root password — kept for recovery/console (the GNOME login is the user below).
 echo "[ROOTFS] Setting root password"
 printf 'root:%s\n' "$ROOT_PASSWORD" | in_chroot chpasswd \
     || die "Setting root password failed."
@@ -292,6 +301,57 @@ in_chroot systemctl mask systemd-remount-fs.service systemd-fsck-root.service \
 
 # 5.5 sanity: init must exist for Stage 2's `switch_root /sbin/init`.
 [ -e "${ROOTFS}/sbin/init" ] || die "/sbin/init missing in rootfs — not a bootable pmOS root?"
+
+# 5.6 create the GNOME session user. GNOME/mutter refuses to run as root and GDM
+# won't do a root graphical login; a RAM boot discards pmOS's own first-boot user
+# setup, so no user exists — create one here. Idempotent (skip if it already
+# exists). Prefer shadow's useradd (GNOME/accountsservice pulls in shadow); fall
+# back to busybox adduser.
+if in_chroot id -u "$TARGET_USER" >/dev/null 2>&1; then
+    echo "[ROOTFS] User ${TARGET_USER} already exists"
+else
+    echo "[ROOTFS] Creating user ${TARGET_USER}"
+    in_chroot useradd -m -s /bin/bash "$TARGET_USER" \
+        || in_chroot adduser -D "$TARGET_USER" \
+        || die "Creating user ${TARGET_USER} failed (neither useradd nor adduser worked)."
+fi
+
+# 5.6.1 user password.
+echo "[ROOTFS] Setting password for ${TARGET_USER}"
+printf '%s:%s\n' "$TARGET_USER" "$USER_PASSWORD" | in_chroot chpasswd \
+    || die "Setting password for ${TARGET_USER} failed."
+
+# 5.6.2 add the user to each group that ACTUALLY exists. Never `useradd -G` a
+# fixed list — it fails wholesale if any group is missing. Add per-group instead,
+# guarded by getent, via usermod (shadow) or busybox addgroup. Non-fatal per group.
+for g in wheel video audio input netdev plugdev render; do
+    in_chroot sh -c "getent group $g >/dev/null 2>&1 || exit 0
+        usermod -aG $g $TARGET_USER 2>/dev/null || addgroup $TARGET_USER $g 2>/dev/null || true" \
+        || true
+done
+
+# 5.7 GDM autologin — boot straight to the GNOME desktop, no greeter, matching the
+# console flow's zero-interaction login. Alpine/pmOS GDM reads /etc/gdm/custom.conf
+# (the Debian gdm-3 dir does not apply). mkdir -p: the dir may not exist yet.
+echo "[ROOTFS] Enabling GDM autologin for ${TARGET_USER}"
+mkdir -p "${ROOTFS}/etc/gdm"
+cat >"${ROOTFS}/etc/gdm/custom.conf" <<EOF
+[daemon]
+AutomaticLoginEnable=True
+AutomaticLogin=${TARGET_USER}
+EOF
+
+# 5.7.1 ensure a graphical boot. Both are almost certainly already set in the GNOME
+# image; set them defensively (non-fatal on already-enabled).
+in_chroot systemctl set-default graphical.target 2>/dev/null || true
+in_chroot systemctl enable gdm 2>/dev/null || true
+
+# 5.8 skip the gnome-initial-setup first-run wizard so it doesn't sit in front of
+# the autologin session. Best-effort/non-fatal — autologin works without it.
+in_chroot sh -c "install -d -o $TARGET_USER -g $TARGET_USER /home/$TARGET_USER/.config \
+    && printf 'yes\n' > /home/$TARGET_USER/.config/gnome-initial-setup-done \
+    && chown $TARGET_USER:$TARGET_USER /home/$TARGET_USER/.config/gnome-initial-setup-done" \
+    2>/dev/null || true
 
 # =============================================================================
 # 6. Cleanup and reporting
@@ -323,7 +383,9 @@ echo " Rootfs build complete!"
 echo "   Tree:    ${ROOTFS}"
 echo "   Size:    ${ROOTFS_SIZE}"
 echo "   Kernel:  vmlinuz-${REL}  (+ modules, firmware, surface.dtb)"
-echo "   Login:   root / ${ROOT_PASSWORD} (console), hostname ${TARGET_HOSTNAME}"
+echo "   Session: GNOME via GDM autologin as ${TARGET_USER} (graphical.target)"
+echo "   Login:   ${TARGET_USER} / ${USER_PASSWORD}  (root / ${ROOT_PASSWORD} for console)"
+echo "   Host:    ${TARGET_HOSTNAME}"
 echo ""
 echo " Next: Stage 2 (inst-initrd.sh) packs this tree into rootfs.squashfs"
 echo "       and embeds it in the RAM-boot initrd."
