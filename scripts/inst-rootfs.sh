@@ -278,6 +278,17 @@ else
         || die "apk add busybox-static reported success but ${ROOTFS}/bin/busybox.static is missing."
 fi
 
+# 5.1b Disk-install tooling — baked in so the on-device installer (inst-disk,
+# run later from the RAM session) is self-sufficient with NO network at install
+# time. rsync: clone the rootfs onto the internal disk. grub + grub-efi: the
+# arm64-efi GRUB that injects surface.dtb, installed onto the shared internal
+# ESP. efibootmgr: create the NVRAM boot entry ahead of Windows Boot Manager.
+# (parted / mkfs.ext4 / partprobe are already in the base pmOS image.) apk here
+# needs network in the chroot, same as busybox-static above.
+echo "[ROOTFS] Installing disk-install tooling (rsync grub grub-efi efibootmgr) via apk"
+in_chroot apk add rsync grub grub-efi efibootmgr \
+    || die "apk add of disk-install tooling (rsync grub grub-efi efibootmgr) failed — needs network inside the chroot."
+
 # 5.2 root password — kept for recovery/console (the GNOME login is the user below).
 echo "[ROOTFS] Setting root password"
 printf 'root:%s\n' "$ROOT_PASSWORD" | in_chroot chpasswd \
