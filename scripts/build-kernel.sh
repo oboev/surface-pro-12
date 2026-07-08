@@ -82,7 +82,23 @@ force_config_symbols() {
             "$KERNEL_SRC/scripts/config" --file "$KERNEL_SRC/.config" -e "$sym"
     done
 
-    # 8.6 Normalize config: resolve dependency constraints
+    # 8.6 Internal UFS storage built-in — root-on-disk with no initramfs.
+    # ufs_qcom + phy_qcom_qmp_ufs ship as modules in the stock config; promoting
+    # them (plus SCSI disk + ext4, already =y) to built-in lets the disk install
+    # boot `root=UUID … rootwait` directly, with no initramfs. Harmless to the RAM
+    # boot (built-in vs module). The QMP-UFS phy lives under `menuconfig
+    # PHY_QCOM_QMP` (an `if PHY_QCOM_QMP` block), so the PARENT must be forced =y
+    # first — otherwise olddefconfig clamps the child back to =m (a tristate can't
+    # exceed the symbol it depends on). Siblings (combo/pcie/usb phy) stay =m. The
+    # phy<->ufshc deferred-probe cycle resolves under rootwait.
+    for sym in CONFIG_SCSI CONFIG_BLK_DEV_SD CONFIG_SCSI_UFSHCD \
+               CONFIG_SCSI_UFSHCD_PLATFORM CONFIG_SCSI_UFS_QCOM \
+               CONFIG_PHY_QCOM_QMP CONFIG_PHY_QCOM_QMP_UFS CONFIG_EXT4_FS; do
+        run_with_check "Enabling $sym" \
+            "$KERNEL_SRC/scripts/config" --file "$KERNEL_SRC/.config" -e "$sym"
+    done
+
+    # 8.7 Normalize config: resolve dependency constraints
     run_with_check "Running olddefconfig to normalize .config" \
         make -C "$KERNEL_SRC" \
              ARCH=arm64 \
@@ -171,6 +187,15 @@ REQUIRED_SYMBOLS=(
     "CONFIG_SERIAL_QCOM_GENI=y"
     "CONFIG_SURFACE_PLATFORMS=y"
     "CONFIG_ACPI=y"
+    # Internal UFS storage built-in — disk install boots root=UUID w/o initramfs.
+    "CONFIG_SCSI=y"
+    "CONFIG_BLK_DEV_SD=y"
+    "CONFIG_SCSI_UFSHCD=y"
+    "CONFIG_SCSI_UFSHCD_PLATFORM=y"
+    "CONFIG_SCSI_UFS_QCOM=y"
+    "CONFIG_PHY_QCOM_QMP=y"
+    "CONFIG_PHY_QCOM_QMP_UFS=y"
+    "CONFIG_EXT4_FS=y"
 )
 verify_config
 

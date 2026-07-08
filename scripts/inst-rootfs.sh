@@ -272,7 +272,8 @@ run_with_check "Installing busybox-static + LXQt/SDDM desktop + NetworkManager" 
         busybox-static \
         xorg \
         sddm lxqt \
-        network-manager nm-tray
+        network-manager nm-tray \
+        rsync efibootmgr
 
 # =============================================================================
 # 6. Chroot — user and system configuration
@@ -339,6 +340,20 @@ EOF
 if [ -d "${ROOTFS}/etc/cloud" ]; then
     run_with_check "Disabling cloud-init" \
         touch "${ROOTFS}/etc/cloud/cloud-init.disabled"
+fi
+
+# 6.7 SSH host keys. The Debian cloud image ships openssh-server WITHOUT host
+# keys — each instance is expected to generate its own on first boot (cloud-init
+# / a first-boot service). With cloud-init disabled (6.6b) and root being a
+# discarded overlay, that never happens, so sshd exits with "no hostkeys
+# available" and crash-loops. Generate the keys here so they are baked into the
+# squashfs and stable across the RAM/overlay boots. ssh-keygen -A only creates
+# the key types that are missing, so this is safe on re-runs.
+if [ -x "${ROOTFS}/usr/bin/ssh-keygen" ] || [ -x "${ROOTFS}/bin/ssh-keygen" ]; then
+    run_with_check "Generating SSH host keys" \
+        in_chroot ssh-keygen -A
+else
+    echo "[ROOTFS] ssh-keygen not present in rootfs — skipping host key generation."
 fi
 
 # =============================================================================
