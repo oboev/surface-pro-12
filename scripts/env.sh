@@ -27,7 +27,7 @@ PROJECT_DIR="$(cd "${_ENV_SH_DIR}/.." && pwd)"
 unset _ENV_SH_DIR
 
 # ── Inputs ───────────────────────────────────────────────────────────────────
-ISO_PATH="${PROJECT_DIR}/iso/resolute-desktop-arm64+x1e.iso"
+ISO_PATH="${PROJECT_DIR}/iso/debian-14-generic-arm64-daily.tar.xz"
 KERNEL_SRC="${PROJECT_DIR}/linux"
 BUILD="${PROJECT_DIR}/build"
 ASSETS="${PROJECT_DIR}/assets"

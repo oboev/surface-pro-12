@@ -1,6 +1,6 @@
 # What this project is
 
-Project creates a set of scripts to produce a bootable Ubuntu USB on a **Microsoft Surface Pro 12** (Snapdragon X, ARM64) entirely from RAM. The machine boots from USB, loads the OS into RAM, then never reads the USB again.
+Project creates a set of scripts to produce a bootable Debian USB on a **Microsoft Surface Pro 12** (Snapdragon X, ARM64) entirely from RAM. The machine boots from USB, loads the OS into RAM, then never reads the USB again.
 
 ---
 
@@ -10,12 +10,13 @@ Project creates a set of scripts to produce a bootable Ubuntu USB on a **Microso
 # 1. Checkout external deps
 # git clone --depth=1 https://github.com/torvalds/linux.git
 # git clone https://github.com/harrisonvanderbyl/surface-pro-12-inch-linux.git
-# wget -c https://people.canonical.com/~platform/images/ubuntu-concept/resolute-desktop-arm64+x1e.iso
+# Place the Debian 14 (forky) generic arm64 daily cloud image at
+#   iso/debian-14-generic-arm64-daily.tar.xz
 
 # 2. Update env.sh
 # KERNEL_SRC=".../linux"
 # ASSETS=".../surface-pro-12-inch-linux"
-# ISO_PATH=".../resolute-desktop-arm64+x1e.iso"
+# ISO_PATH=".../iso/debian-14-generic-arm64-daily.tar.xz"
 
 # 3. Build kernel
 ./scripts/build-kernel.sh
@@ -58,9 +59,9 @@ Cross-compiles the ARM64 kernel in the `linux/` source tree. Forces Surface-spec
 sudo ./scripts/inst-rootfs.sh
 ```
 
-Extracts the ISO's `casper/minimal.squashfs` into `build/inst/root/`, injects the custom kernel + modules + firmware + DTB, then chroots (via `qemu-aarch64-static` + binfmt) to configure apt for the arm64 ports mirror, create user `myuser` (password `surface`), enable GDM3 autologin, and set `graphical.target` as default.
+Extracts `disk.raw` from the Debian generic arm64 cloud image, loop-mounts its ext4 root partition (`losetup -P`), and copies the tree into `build/inst/root/`. Injects the custom kernel + modules + firmware + DTB, then chroots (via `qemu-aarch64-static` + binfmt) to install a static busybox and the **LXQt desktop on the SDDM login manager** (plus `xorg` and NetworkManager), create user `myuser` (password `surface`), enable `sddm.service`/`NetworkManager.service`, set `graphical.target` as default, and neutralize cloud-image boot footguns (blank `/etc/fstab`, disable cloud-init). The Debian image already ships correct deb822 sources, so apt is not reconfigured.
 
-**Prerequisites:** Stage 1 complete, `qemu-user-static` with binfmt handler registered, run as root.
+**Prerequisites:** Stage 1 complete, `qemu-user-static` with binfmt handler registered, host `losetup -P` + xz-capable `tar`, network access (for the apt install), run as root.
 
 ## Stage 2: Build RAM-boot initrd
 

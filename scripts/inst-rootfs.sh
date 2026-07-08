@@ -4,36 +4,38 @@ set -euo pipefail
 # =============================================================================
 # scripts/inst-rootfs.sh — Stage 1.5: build the RAM-boot rootfs tree.
 #
-# Extracts the Resolute ISO's casper/minimal.squashfs into $ROOTFS, injects the
-# cross-compiled 7.2 kernel + modules + Surface firmware + DTB, then chroots
-# (via the qemu-aarch64 binfmt handler) to reconfigure apt for the arm64 ports
-# mirror, create the user, enable GDM autologin, and set the default target.
+# Extracts the Debian 14 (forky) generic arm64 cloud image by loop-mounting
+# its ext4 root partition and copying the  tree into $ROOTFS, injects
+# the cross-compiled kernel + modules + Surface firmware + DTB, then chroots 
+# to create the user, install the LXQt desktop with the SDDM login manager, and
+# neutralize cloud-image boot footguns.
 #
-# The result ($BUILD/inst/root) is a complete Ubuntu arm64 rootfs that Stage 2
-# packs into a squashfs and embeds in the initrd for RAM-only boot.
+# The result ($BUILD/inst/root) is a complete Debian arm64 rootfs with an
+# LXQt/SDDM graphical desktop that Stage 2 packs into a squashfs and embeds in
+# the initrd for RAM-only boot.
 #
 # Runs as root on the x86_64 build host. Every write/mount MUST target
 # "${ROOTFS}/…" or "chroot ${ROOTFS}" — a bare host path would corrupt the host.
 # =============================================================================
 
 # --- 0. Path configuration: env.sh is the single source of truth -------------
-# shellcheck source=scripts/env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
 # Fixed knobs for this stage.
 CROSS_COMPILE="aarch64-linux-gnu-"
-SQUASHFS_REL="casper/minimal.squashfs"   # ISO-relative path to the base rootfs
 KERNEL_RELEASE_FILE="${KERNEL_SRC}/include/config/kernel.release"
-UBUNTU_SUITE="resolute"                   # Ubuntu 26.04 codename (the ISO's release)
-PORTS_MIRROR="http://ports.ubuntu.com/ubuntu-ports"
 TARGET_USER="myuser"
 USER_PASSWORD="surface"
 ROOT_PASSWORD="surface"
 TARGET_HOSTNAME="surface-sp12"
-USER_GROUPS="sudo,adm,plugdev,netdev,video,audio,render"
+USER_GROUPS="sudo,adm,plugdev,video,audio,render"
 
 # Bind mounts we set up for the chroot, in mount order. Unmounted in reverse.
 CHROOT_BINDS=(dev dev/pts proc sys)
+
+# Loop device attached to disk.raw (set in section 2). Tracked here so the
+# cleanup trap can detach it on any exit path.
+LOOP=""
 
 # --- Helpers -----------------------------------------------------------------
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -46,8 +48,9 @@ run_with_check() {
     fi
 }
 
-# Unmount every chroot bind (reverse order) plus the ISO, if still mounted.
-# Idempotent and non-fatal: safe to call from the EXIT trap on any exit path.
+# Unmount every chroot bind (reverse order) plus the image root partition, and
+# detach the disk.raw loop device, if still present. Idempotent and non-fatal:
+# safe to call from the EXIT trap on any exit path.
 unmount_all() {
     local i target
     for (( i=${#CHROOT_BINDS[@]}-1; i>=0; i-- )); do
@@ -58,6 +61,11 @@ unmount_all() {
     done
     if mountpoint -q "$ISO_MOUNT"; then
         umount "$ISO_MOUNT" 2>/dev/null || umount -l "$ISO_MOUNT" 2>/dev/null || true
+    fi
+    # Detach the loop device (with its partition scan) once nothing is mounted
+    # off it. losetup -d is a no-op-safe best effort here.
+    if [ -n "$LOOP" ] && [ -b "$LOOP" ]; then
+        losetup -d "$LOOP" 2>/dev/null || true
     fi
 }
 
@@ -84,8 +92,15 @@ BINFMT="/proc/sys/fs/binfmt_misc/qemu-aarch64"
 [ -e "$BINFMT" ] || die "qemu-aarch64 binfmt not registered. Install qemu-user-static and register binfmts."
 grep -q '^enabled' "$BINFMT" || die "qemu-aarch64 binfmt is registered but disabled."
 
-# 1.1 Resolute ISO
-[ -f "$ISO_PATH" ] || die "Resolute ISO not found at ${ISO_PATH}"
+# 1.1 Debian generic arm64 cloud image.
+[ -f "$ISO_PATH" ] || die "Debian image not found at ${ISO_PATH}"
+
+# 1.1b host tooling: losetup with partition scanning (-P) and xz-capable tar are
+# required to unpack and loop-mount the raw disk.
+command -v losetup >/dev/null || die "losetup not found (util-linux) — required to loop-mount disk.raw."
+losetup --help 2>&1 | grep -q -- '-P' \
+    || die "This losetup lacks -P (partition scan) support — cannot mount disk.raw partitions."
+command -v xz >/dev/null || die "xz not found — required to extract the .tar.xz image."
 
 # 1.2 kernel source with the compiled ARM64 Image
 [ -f "${KERNEL_SRC}/arch/arm64/boot/Image" ] \
@@ -130,32 +145,57 @@ fi
 trap cleanup EXIT
 
 # =============================================================================
-# 2. ISO mount and squashfs extraction
+# 2. Unpack the Debian disk image and copy its root partition into $ROOTFS
 # =============================================================================
-# 2.1 mount the ISO read-only via loop.
-run_with_check "Mounting ISO read-only" \
-    mount -o loop,ro "$ISO_PATH" "$ISO_MOUNT"
+# 2.1 extract disk.raw from the .tar.xz into build/inst (sibling of $ROOTFS).
+DISK_WORK="$(dirname "$ROOTFS")"
+DISK_RAW="${DISK_WORK}/disk.raw"
+mkdir -p "$DISK_WORK"
+rm -f "$DISK_RAW"
+run_with_check "Extracting disk.raw from image" \
+    tar -xf "$ISO_PATH" -C "$DISK_WORK" disk.raw
+[ -f "$DISK_RAW" ] || die "disk.raw not found after extracting ${ISO_PATH}."
 
-# 2.2 the base squashfs must exist inside the ISO.
-[ -f "${ISO_MOUNT}/${SQUASHFS_REL}" ] \
-    || die "${SQUASHFS_REL} not found inside the ISO — wrong ISO or layout changed."
+# 2.2 attach as a loop device with partition scanning. $LOOP is tracked so the
+# cleanup trap detaches it on any later failure.
+LOOP="$(losetup -Pf --show "$DISK_RAW")" || die "losetup failed for ${DISK_RAW}."
+[ -b "$LOOP" ] || die "losetup did not return a block device (got '${LOOP}')."
+echo "[ROOTFS] Attached ${DISK_RAW} as ${LOOP}"
 
-# 2.2 extract. NOTE: no -f, and $ROOTFS must NOT pre-exist — unsquashfs -d owns
-# and creates it. -f corrupts top-level perms to 700 (known project footgun).
-run_with_check "Extracting ${SQUASHFS_REL}" \
-    unsquashfs -d "$ROOTFS" "${ISO_MOUNT}/${SQUASHFS_REL}"
+# 2.3 the ext4 root is partition 1. The pN node can appear slightly after
+# losetup returns; wait briefly (partprobe as a fallback) before giving up.
+ROOT_PART="${LOOP}p1"
+for _ in $(seq 1 10); do
+    [ -b "$ROOT_PART" ] && break
+    partprobe "$LOOP" 2>/dev/null || true
+    sleep 0.3
+done
+[ -b "$ROOT_PART" ] || die "Root partition ${ROOT_PART} did not appear (partition scan failed)."
 
-# 2.3 the ISO is no longer needed — unmount immediately and verify.
-run_with_check "Unmounting ISO" umount "$ISO_MOUNT"
-mountpoint -q "$ISO_MOUNT" && die "ISO still mounted at ${ISO_MOUNT} after umount."
+# 2.4 mount the root partition read-only and copy its whole tree into $ROOTFS.
+# Unlike the old unsquashfs flow, $ROOTFS is created here (cp -a into it); -a
+# preserves ownership, perms, and symlinks and copies top-level dotfiles.
+run_with_check "Mounting root partition read-only" \
+    mount -o ro "$ROOT_PART" "$ISO_MOUNT"
+mkdir -p "$ROOTFS"
+run_with_check "Copying root filesystem into ${ROOTFS}" \
+    cp -a "${ISO_MOUNT}/." "$ROOTFS/"
 
-# 2.4 / 2.5 sanity check: extraction must leave 755 on /, /usr, /etc.
+# 2.5 tear down the image: unmount, detach the loop, and delete disk.raw so it
+# does not linger as a multi-gigabyte artifact.
+run_with_check "Unmounting root partition" umount "$ISO_MOUNT"
+mountpoint -q "$ISO_MOUNT" && die "Image partition still mounted at ${ISO_MOUNT} after umount."
+losetup -d "$LOOP" 2>/dev/null || true
+LOOP=""
+rm -f "$DISK_RAW"
+
+# 2.6 sanity check: a well-formed rootfs has 755 on /, /usr, /etc.
 for d in "" /usr /etc; do
     perm="$(stat -c '%a' "${ROOTFS}${d}")"
     [ "$perm" = "755" ] \
-        || die "Bad permissions on ${ROOTFS}${d}: expected 755, got ${perm} (unsquashfs corruption?)."
+        || die "Bad permissions on ${ROOTFS}${d}: expected 755, got ${perm} (bad copy?)."
 done
-echo "Extraction verified (/, /usr, /etc are 755)."
+echo "Copy verified (/, /usr, /etc are 755)."
 
 # =============================================================================
 # 3. Inject kernel, modules, firmware, DTB
@@ -202,8 +242,14 @@ run_with_check "Installing device tree blob" \
 # 4. Chroot — prepare mounts
 # =============================================================================
 # 4.1 resolv.conf so apt can resolve names inside the chroot.
-run_with_check "Copying resolv.conf into rootfs" \
-    cp --dereference /etc/resolv.conf "${ROOTFS}/etc/resolv.conf"
+run_with_check "Removing image's dangling resolv.conf symlink" \
+    rm -f "${ROOTFS}/etc/resolv.conf"
+run_with_check "Writing static resolv.conf into rootfs" \
+    tee "${ROOTFS}/etc/resolv.conf" <<'EOF'
+# Static resolvers for the chroot build; NetworkManager overwrites this at boot.
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+EOF
 
 # 4.2 the EXIT trap (installed above) already guarantees unmount on any failure.
 # 4.3 bind/virtual mounts, in CHROOT_BINDS order. Explicit commands (not a
@@ -218,31 +264,15 @@ in_chroot() { chroot "$ROOTFS" "$@"; }
 export DEBIAN_FRONTEND=noninteractive
 
 # =============================================================================
-# 5. Chroot — apt configuration
+# 5. Chroot — install packages
 # =============================================================================
-# 5.1 disable every live-media apt source (both classic .list and deb822 .sources)
-# so nothing points at file:/cdrom, which does not exist off the ISO.
-echo "[ROOTFS] Disabling live-media apt sources"
-if [ -f "${ROOTFS}/etc/apt/sources.list" ]; then
-    mv "${ROOTFS}/etc/apt/sources.list" "${ROOTFS}/etc/apt/sources.list.disabled"
-fi
-if [ -d "${ROOTFS}/etc/apt/sources.list.d" ]; then
-    for f in "${ROOTFS}/etc/apt/sources.list.d/"*.list "${ROOTFS}/etc/apt/sources.list.d/"*.sources; do
-        [ -e "$f" ] || continue   # nullglob-free guard: skip the literal pattern
-        mv "$f" "${f}.disabled"
-    done
-fi
-
-# 5.2 pin apt to the arm64 ports mirror — exactly resolute / -updates / -security.
-run_with_check "Writing arm64 ports sources.list" \
-    tee "${ROOTFS}/etc/apt/sources.list" <<EOF
-deb ${PORTS_MIRROR} ${UBUNTU_SUITE} main restricted universe multiverse
-deb ${PORTS_MIRROR} ${UBUNTU_SUITE}-updates main restricted universe multiverse
-deb ${PORTS_MIRROR} ${UBUNTU_SUITE}-security main restricted universe multiverse
-EOF
-
-# 5.3 refresh package lists against the new mirror.
 run_with_check "apt-get update" in_chroot apt-get update
+run_with_check "Installing busybox-static + LXQt/SDDM desktop + NetworkManager" \
+    in_chroot apt-get install -y \
+        busybox-static \
+        xorg \
+        sddm lxqt \
+        network-manager nm-tray
 
 # =============================================================================
 # 6. Chroot — user and system configuration
@@ -270,18 +300,15 @@ printf '%s:%s\n%s:%s\n' \
     "root" "$ROOT_PASSWORD" \
     | in_chroot chpasswd
 
-# 6.4 GDM autologin.
-run_with_check "Creating gdm3 autologin config" mkdir -p "${ROOTFS}/etc/gdm3"
-run_with_check "Writing gdm3 custom.conf" \
-    tee "${ROOTFS}/etc/gdm3/custom.conf" <<EOF
-[daemon]
-AutomaticLoginEnable=true
-AutomaticLogin=${TARGET_USER}
-EOF
+# 6.4 graphical login
+run_with_check "Enabling SDDM display manager" \
+    in_chroot systemctl enable sddm.service
 
-# 6.5 default target = graphical.target. Link straight at the unit file (never a
-# SysV init.d / runlevel path). Resolve where systemd units actually live in
-# this rootfs (usrmerge → /lib is a symlink to /usr/lib, but be explicit).
+# 6.4b NetworkManager: enable explicitly.
+run_with_check "Enabling NetworkManager" \
+    in_chroot systemctl enable NetworkManager.service
+
+# 6.5 default target = graphical.target.
 if   [ -f "${ROOTFS}/usr/lib/systemd/system/graphical.target" ]; then
     GRAPHICAL_UNIT="/usr/lib/systemd/system/graphical.target"
 elif [ -f "${ROOTFS}/lib/systemd/system/graphical.target" ]; then
@@ -295,6 +322,24 @@ run_with_check "Setting default target to graphical.target" \
 # Verify the symlink resolves to a real file (guards against a dangling link).
 [ -f "$(readlink -f "${ROOTFS}/etc/systemd/system/default.target")" ] \
     || die "default.target symlink does not resolve to a real unit."
+
+# 6.6 neutralize cloud-image boot footguns.
+# 6.6a /etc/fstab: the image mounts /, /boot, /boot/efi by UUIDs that belong to
+# disk.raw and do not exist under RAM/overlay boot — systemd would block on the
+# .mount units. Replace with a comment-only fstab (root comes from the overlay).
+run_with_check "Blanking /etc/fstab" \
+    tee "${ROOTFS}/etc/fstab" <<EOF
+# Intentionally empty for RAM/overlay boot — see scripts/inst-rootfs.sh.
+# Root is provided by the initrd overlay; the cloud image's UUID mounts are
+# removed because those devices do not exist in this boot.
+EOF
+
+# 6.6b cloud-init: with no datasource it stalls boot probing for config and can
+# override our user/hostname. Disable it if the image ships it.
+if [ -d "${ROOTFS}/etc/cloud" ]; then
+    run_with_check "Disabling cloud-init" \
+        touch "${ROOTFS}/etc/cloud/cloud-init.disabled"
+fi
 
 # =============================================================================
 # 7. Cleanup and reporting
@@ -326,7 +371,7 @@ echo " Rootfs build complete!"
 echo "   Tree:    ${ROOTFS}"
 echo "   Size:    ${ROOTFS_SIZE}"
 echo "   Kernel:  vmlinuz-${REL}  (+ modules, firmware, surface.dtb)"
-echo "   User:    ${TARGET_USER} (autologin), hostname ${TARGET_HOSTNAME}"
+echo "   User:    ${TARGET_USER} (SDDM login), hostname ${TARGET_HOSTNAME}"
 echo ""
 echo " Next: Stage 2 (inst-initrd.sh) packs this tree into rootfs.squashfs"
 echo "       and embeds it in the RAM-boot initrd."
