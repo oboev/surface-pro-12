@@ -7,7 +7,7 @@ set -euo pipefail
 # Extracts the Resolute ISO's casper/minimal.squashfs into $ROOTFS, injects the
 # cross-compiled 7.2 kernel + modules + Surface firmware + DTB, then chroots
 # (via the qemu-aarch64 binfmt handler) to reconfigure apt for the arm64 ports
-# mirror, create the user, enable GDM autologin, and set the default target.
+# mirror, create the user, and set the default target.
 #
 # The result ($BUILD/inst/root) is a complete Ubuntu arm64 rootfs that Stage 2
 # packs into a squashfs and embeds in the initrd for RAM-only boot.
@@ -270,16 +270,7 @@ printf '%s:%s\n%s:%s\n' \
     "root" "$ROOT_PASSWORD" \
     | in_chroot chpasswd
 
-# 6.4 GDM autologin.
-run_with_check "Creating gdm3 autologin config" mkdir -p "${ROOTFS}/etc/gdm3"
-run_with_check "Writing gdm3 custom.conf" \
-    tee "${ROOTFS}/etc/gdm3/custom.conf" <<EOF
-[daemon]
-AutomaticLoginEnable=true
-AutomaticLogin=${TARGET_USER}
-EOF
-
-# 6.5 default target = graphical.target. Link straight at the unit file (never a
+# 6.4 default target = graphical.target. Link straight at the unit file (never a
 # SysV init.d / runlevel path). Resolve where systemd units actually live in
 # this rootfs (usrmerge → /lib is a symlink to /usr/lib, but be explicit).
 if   [ -f "${ROOTFS}/usr/lib/systemd/system/graphical.target" ]; then
@@ -326,7 +317,7 @@ echo " Rootfs build complete!"
 echo "   Tree:    ${ROOTFS}"
 echo "   Size:    ${ROOTFS_SIZE}"
 echo "   Kernel:  vmlinuz-${REL}  (+ modules, firmware, surface.dtb)"
-echo "   User:    ${TARGET_USER} (autologin), hostname ${TARGET_HOSTNAME}"
+echo "   User:    ${TARGET_USER}, hostname ${TARGET_HOSTNAME}"
 echo ""
 echo " Next: Stage 2 (inst-initrd.sh) packs this tree into rootfs.squashfs"
 echo "       and embeds it in the RAM-boot initrd."
