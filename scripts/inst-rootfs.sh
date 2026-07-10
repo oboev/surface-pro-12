@@ -243,6 +243,9 @@ EOF
 
 # 5.3 refresh package lists against the new mirror.
 run_with_check "apt-get update" in_chroot apt-get update
+echo "[ROOTFS] Installing disk-install tooling (rsync parted grub-efi-arm64 grub-efi-arm64-bin efibootmgr) via apt-get"
+in_chroot apt-get install -y rsync parted grub-efi-arm64 grub-efi-arm64-bin efibootmgr \
+    || die "apt install of disk-install tooling (rsync parted grub-efi-arm64 grub-efi-arm64-bin efibootmgr) failed — needs network inside the chroot."
 
 # =============================================================================
 # 6. Chroot — user and system configuration
