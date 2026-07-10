@@ -98,6 +98,18 @@ force_config_symbols() {
             "$KERNEL_SRC/scripts/config" --file "$KERNEL_SRC/.config" -e "$sym"
     done
 
+    # 8.8 postmarketOS service prerequisites.
+    for sym in CONFIG_ZRAM CONFIG_ZRAM_DEF_COMP_ZSTD CONFIG_CRYPTO_ZSTD \
+               CONFIG_NETFILTER CONFIG_NF_CONNTRACK CONFIG_NF_NAT \
+               CONFIG_NF_TABLES CONFIG_NF_TABLES_INET CONFIG_NFT_CT CONFIG_NFT_NAT \
+               CONFIG_NF_REJECT_IPV4 CONFIG_NF_REJECT_IPV6 \
+               CONFIG_NFT_REJECT CONFIG_NFT_REJECT_INET \
+               CONFIG_BT CONFIG_BT_LE CONFIG_BT_RFCOMM CONFIG_BT_RFCOMM_TTY \
+               CONFIG_INPUT_UINPUT CONFIG_UHID; do
+        run_with_check "Enabling $sym" \
+            "$KERNEL_SRC/scripts/config" --file "$KERNEL_SRC/.config" -e "$sym"
+    done
+
     # 8.7 Normalize config: resolve dependency constraints
     run_with_check "Running olddefconfig to normalize .config" \
         make -C "$KERNEL_SRC" \
@@ -196,6 +208,17 @@ REQUIRED_SYMBOLS=(
     "CONFIG_PHY_QCOM_QMP=y"
     "CONFIG_PHY_QCOM_QMP_UFS=y"
     "CONFIG_EXT4_FS=y"
+    "CONFIG_ZRAM=y"
+    "CONFIG_CRYPTO_ZSTD=y"
+    "CONFIG_NF_TABLES=y"
+    "CONFIG_NF_CONNTRACK=y"
+    "CONFIG_NF_REJECT_IPV4=y"
+    "CONFIG_NF_REJECT_IPV6=y"
+    "CONFIG_NFT_REJECT_INET=y"
+    "CONFIG_BT_LE=y"
+    "CONFIG_BT_RFCOMM=y"
+    "CONFIG_INPUT_UINPUT=y"
+    "CONFIG_UHID=y"
 )
 verify_config
 
