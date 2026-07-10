@@ -1,6 +1,6 @@
 # What this project is
 
-Project creates a set of scripts to produce a bootable Ubuntu USB on a **Microsoft Surface Pro 12** (Snapdragon X, ARM64) entirely from RAM. The machine boots from USB, loads the OS into RAM, then never reads the USB again.
+Project creates a set of scripts to produce a bootable **postmarketOS GNOME** USB on a **Microsoft Surface Pro 12** (Snapdragon X, ARM64) entirely from RAM. The machine boots from USB, loads the OS into RAM, then never reads the USB again — dropping straight into a GNOME desktop (GDM autologin) with the internal disk untouched.
 
 ---
 
@@ -10,12 +10,12 @@ Project creates a set of scripts to produce a bootable Ubuntu USB on a **Microso
 # 1. Checkout external deps
 # git clone --depth=1 https://github.com/torvalds/linux.git
 # git clone https://github.com/harrisonvanderbyl/surface-pro-12-inch-linux.git
-# wget -c https://people.canonical.com/~platform/images/ubuntu-concept/resolute-desktop-arm64+x1e.iso
+# download trailblazer image from https://images.postmarketos.org/bpo/edge/postmarketos-trailblazer/
 
 # 2. Update env.sh
 # KERNEL_SRC=".../linux"
 # ASSETS=".../surface-pro-12-inch-linux"
-# ISO_PATH=".../resolute-desktop-arm64+x1e.iso"
+# ISO_PATH=".../20260704-0051-postmarketOS-edge-gnome-4-postmarketos-trailblazer-next.img.xz"
 
 # 3. Build kernel
 ./scripts/build-kernel.sh
@@ -30,7 +30,7 @@ sudo ./scripts/inst-initrd.sh
 sudo ./scripts/flash-install.sh /dev/sdX
 ```
 
-# Build pipeline — three stages
+# Build pipeline — staged
 
 Run from the project root. Each stage must complete successfully before the next.
 
@@ -58,7 +58,7 @@ Cross-compiles the ARM64 kernel in the `linux/` source tree. Forces Surface-spec
 sudo ./scripts/inst-rootfs.sh
 ```
 
-Extracts the ISO's `casper/minimal.squashfs` into `build/inst/root/`, injects the custom kernel + modules + firmware + DTB, then chroots (via `qemu-aarch64-static` + binfmt) to configure apt for the arm64 ports mirror, create user `myuser` (password `surface`), enable GDM3 autologin, and set `graphical.target` as default.
+Decompresses the postmarketOS trailblazer image, loop-mounts its ext4 root partition (p2), and rsyncs it into `build/inst/root/`. Injects the custom kernel + modules + firmware + DTB, then chroots (via `qemu-aarch64-static` + binfmt) to install a static busybox, set the hostname and root password, and create a non-root user `user` (password `surface`) with GDM autologin into GNOME (mutter/Wayland won't run as root, and a RAM boot discards pmOS's own first-boot user setup).
 
 **Prerequisites:** Stage 1 complete, `qemu-user-static` with binfmt handler registered, run as root.
 
@@ -78,4 +78,6 @@ Packs the rootfs into `build/inst/out/rootfs.squashfs` (gzip, 1 MiB blocks), the
 sudo ./scripts/flash-install.sh /dev/sdX
 ```
 
-Wipes and repartitions the USB (GPT + single FAT32 ESP), copies kernel/DTB/initrd, installs GRUB (removable arm64-efi), writes a two-entry `grub.cfg` ("Try in RAM" default + "INSTALL").
+Wipes and repartitions the USB, copies kernel/DTB and the ~3.5 GB OS-in-a-file initrd, installs GRUB (removable arm64-efi), and writes a single-entry `grub.cfg` ("Try in RAM (no disk changes)"). The rootfs squashfs is not copied separately — it rides inside the initrd, so the internal disk is never touched.
+
+**Prerequisites:** Stage 2 complete, run as root, Secure Boot OFF on the Surface.
