@@ -28,15 +28,13 @@ qcom/x1p42100/Microsoft/Surface12/qccdsp8380.mbn
 qcom/x1p42100/Microsoft/Surface12/qcdxkmsucpurwa.mbn
 qcom/x1p42100/Microsoft/Surface12/qcvss8380_pa.mbn"
 
-# Blobs the device needs but the DT doesn't name: pd-mapper configs (same dir as
-# the ADSP/CDSP firmware) and the QCA Bluetooth controller firmware + NVM.
+# Blobs the device needs but the DT doesn't name: pd-mapper configs, in the same
+# dir as the ADSP/CDSP firmware.
 EXTRA_FIRMWARE="qcom/x1p42100/Microsoft/Surface12/adspr.jsn
 qcom/x1p42100/Microsoft/Surface12/adsps.jsn
 qcom/x1p42100/Microsoft/Surface12/adspua.jsn
 qcom/x1p42100/Microsoft/Surface12/cdspr.jsn
-qcom/x1p42100/Microsoft/Surface12/battmgr.jsn
-qca/hmtbtfw20.tlv
-qca/hmtnv20.b112"
+qcom/x1p42100/Microsoft/Surface12/battmgr.jsn"
 
 FIRMWARE="${DT_FIRMWARE}
 ${EXTRA_FIRMWARE}"
@@ -121,6 +119,6 @@ echo " Firmware written to ${DEST}"
 echo ""
 echo " Firmware tree (laid out like /lib/firmware):"
 echo "     ${FW_DIR}"
-echo " Merge it into the project's firmware/ overlay with:"
-echo "     cp -a ${FW_DIR}/. /path/to/surface-pro-12/firmware/"
+echo " Merge it into the from-device bucket:"
+echo "     cp -a ${FW_DIR}/. /path/to/surface-pro-12/firmware/from-device/firmware/"
 echo "=============================================="

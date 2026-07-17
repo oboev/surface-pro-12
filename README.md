@@ -88,9 +88,6 @@ Wipes and repartitions the USB, copies kernel/DTB and the ~3.5 GB OS-in-a-file i
 ```
 firmware/
 ├── from-device/firmware/          # extracted from this device's Windows
-│   ├── qca/
-│   │   ├── hmtbtfw20.tlv                    274K   Bluetooth controller firmware
-│   │   └── hmtnv20.b112                     9.5K   Bluetooth NVM / RF calibration
 │   └── qcom/x1p42100/Microsoft/Surface12/
 │       ├── qcadsp8380.mbn                    21M   ADSP firmware (audio + battmgr)
 │       ├── adsp_dtbs.elf                     72K   ADSP device tree blobs
@@ -104,6 +101,11 @@ firmware/
 │       ├── battmgr.jsn                      537B   pd-mapper: adsp/charger_pd
 │       └── cdspr.jsn                        534B   pd-mapper: cdsp/root_pd
 ├── linux-firmware/firmware/       # from upstream linux-firmware
+│   ├── qca/                                        # Bluetooth (WCN7850) — matched set
+│   │   ├── hmtbtfw20.tlv                   264K   BT controller rampatch
+│   │   ├── hmtnv20.bin                     9.3K   BT NVM (default)
+│   │   ├── hmtnv20.b10f                    9.3K   BT NVM (board variant)
+│   │   └── hmtnv20.b112                    9.3K   BT NVM (board variant)
 │   ├── qcom/
 │   │   ├── gen71500_sqe.fw.zst              27K    Adreno SQE microcode
 │   │   ├── gen71500_gmu.bin.zst             56K    Adreno GMU firmware
@@ -118,3 +120,7 @@ firmware/
     └── ath12k/WCN7850/hw2.0/
         └── board.bin                        87K    Wi-Fi board-data fixup (00ab:1414)
 ```
+
+## Kernel knobs to enable
+CONFIG_SURFACE_AGGREGATOR_HUB=m
+CONFIG_SURFACE_AGGREGATOR_TABLET_SWITCH=m
