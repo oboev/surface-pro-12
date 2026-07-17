@@ -81,3 +81,40 @@ sudo ./scripts/flash-install.sh /dev/sdX
 Wipes and repartitions the USB, copies kernel/DTB and the ~3.5 GB OS-in-a-file initrd, installs GRUB (removable arm64-efi), and writes a single-entry `grub.cfg` ("Try in RAM (no disk changes)"). The rootfs squashfs is not copied separately — it rides inside the initrd, so the internal disk is never touched.
 
 **Prerequisites:** Stage 2 complete, run as root, Secure Boot OFF on the Surface.
+
+
+## Firmware layout
+
+```
+firmware/
+├── from-device/firmware/          # extracted from this device's Windows
+│   ├── qca/
+│   │   ├── hmtbtfw20.tlv                    274K   Bluetooth controller firmware
+│   │   └── hmtnv20.b112                     9.5K   Bluetooth NVM / RF calibration
+│   └── qcom/x1p42100/Microsoft/Surface12/
+│       ├── qcadsp8380.mbn                    21M   ADSP firmware (audio + battmgr)
+│       ├── adsp_dtbs.elf                     72K   ADSP device tree blobs
+│       ├── qccdsp8380.mbn                   3.0M   CDSP firmware
+│       ├── cdsp_dtbs.elf                     40K   CDSP device tree blobs
+│       ├── qcvss8380_pa.mbn                 2.2M   Video codec (iris/Venus)
+│       ├── qcdxkmsucpurwa.mbn                12K   GPU zap shader (mandatory)
+│       ├── adspr.jsn                        697B   pd-mapper: adsp/root_pd
+│       ├── adspua.jsn                       731B   pd-mapper: adsp/audio_pd
+│       ├── adsps.jsn                        536B   pd-mapper: adsp/sensor_pd
+│       ├── battmgr.jsn                      537B   pd-mapper: adsp/charger_pd
+│       └── cdspr.jsn                        534B   pd-mapper: cdsp/root_pd
+├── linux-firmware/firmware/       # from upstream linux-firmware
+│   ├── qcom/
+│   │   ├── gen71500_sqe.fw.zst              27K    Adreno SQE microcode
+│   │   ├── gen71500_gmu.bin.zst             56K    Adreno GMU firmware
+│   │   ├── x1p42100/gen71500_zap.mbn.zst    2.0K   zap for QC reference boards (NOT loaded)
+│   │   └── x1e80100/
+│   │       └── X1P42100-Microsoft-Surface-Pro-12in-tplg.bin   11K   audio topology
+│   └── ath12k/WCN7850/hw2.0/
+│       ├── amss.bin.zst                     2.7M   Wi-Fi main firmware
+│       ├── m3.bin.zst                       145K   Wi-Fi M3 co-processor
+│       └── board-2.bin.zst                  40K    Wi-Fi board-data archive
+└── custom/firmware/               # project-supplied
+    └── ath12k/WCN7850/hw2.0/
+        └── board.bin                        87K    Wi-Fi board-data fixup (00ab:1414)
+```

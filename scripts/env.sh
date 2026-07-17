@@ -15,7 +15,8 @@
 # whereas this file — being one level down — must climb exactly one "/..".
 # Getting that wrong points every path at the parent of the project.
 #
-# No side effects beyond variable assignment (safe to source under `set -e`).
+# No side effects beyond variable and function definitions (nothing is executed
+# at source time, so it is safe to source under `set -e`).
 # =============================================================================
 
 # These variables are consumed by scripts that source this file, not here.
@@ -47,3 +48,14 @@ ISO_MOUNT="$(realpath -m "${PROJECT_DIR}/build/inst/iso")"
 # kernel+dtb copied out for the Stage 3 ESP. `realpath -m` so it is absolute
 # even before the directory exists (created by inst-initrd.sh).
 OUT="$(realpath -m "${PROJECT_DIR}/build/inst/out")"
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+firmware_tree_merge() {
+    local dest="$1" bucket
+    mkdir -p "$dest"
+    for bucket in linux-firmware from-device custom; do
+        [ -d "${FIRMWARE}/${bucket}/firmware" ] || continue
+        echo "[FIRMWARE] Merging bucket: ${bucket} -> ${dest}"
+        cp -a "${FIRMWARE}/${bucket}/firmware/." "${dest}/"
+    done
+}
